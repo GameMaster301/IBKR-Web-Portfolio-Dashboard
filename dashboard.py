@@ -7,7 +7,7 @@ import plotly.express as px
 import pandas as pd
 from ibkr_client import fetch_all_data
 from data_processor import process_positions, get_summary
-from database import init_db, save_snapshot
+from database import save_snapshot
 
 app = dash.Dash(__name__)
 
@@ -125,11 +125,9 @@ def fetch_data(n):
     summary = get_summary(df)
     save_snapshot(summary['total_value'], summary['total_unrealized_pnl'])
     return {
-        'positions':   df.to_dict('records'),
-        'summary':     summary,
-        'account':     raw['account'],
-        'orders':      raw['orders'],
-        'trade_stats': raw['trade_stats'],
+        'positions': df.to_dict('records'),
+        'summary':   summary,
+        'account':   raw['account'],
     }, 'connected'
 
 
@@ -297,3 +295,4 @@ def update_donut(data):
         plot_bgcolor='rgba(0,0,0,0)',
     )
     return fig
+
