@@ -2,3 +2,6 @@ ib_insync
 pandas
 plotly
 dash
+openpyxl
+reportlab
+yfinance

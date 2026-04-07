@@ -7,6 +7,8 @@ def process_positions(positions, market_data=None):
     df = pd.DataFrame(positions)
     market_data = market_data or {}
 
+    if 'price_stale' not in df.columns:
+        df['price_stale'] = False
     df['pnl_pct'] = ((df['current_price'] - df['avg_cost']) / df['avg_cost'] * 100).round(2)
     df['total_cost'] = (df['avg_cost'] * df['quantity']).round(2)
 
