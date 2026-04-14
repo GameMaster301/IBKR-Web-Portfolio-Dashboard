@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+.eggs
+dist/
+build/
+
+# Database (use the volume, not a baked-in DB)
+portfolio.db
+portfolio.db.bak
+
+# Env / secrets
+.env
+.env.*
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PyInstaller artefacts
+build/
+dist/
+*.spec
+
+# Logs
+*.log

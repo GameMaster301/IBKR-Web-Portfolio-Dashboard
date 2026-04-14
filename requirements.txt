@@ -1,7 +1,9 @@
-ib_insync
+ib_async
 pandas
+numpy
 plotly
 dash
-openpyxl
 reportlab
 yfinance
+pyyaml
+anthropic>=0.40.0

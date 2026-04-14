@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  dashboard:
+    build: .
+    image: ibkrdash:latest
+    container_name: ibkrdash
+
+    ports:
+      - "${DASH_PORT:-8050}:8050"
+
+    environment:
+      # ── IBKR connection ────────────────────────────────────────────────────
+      # TWS / IB Gateway runs on your HOST machine, not inside the container.
+      # host.docker.internal resolves to the host on Docker Desktop (Mac/Win).
+      # On Linux set IBKR_HOST to your actual LAN IP (e.g. 192.168.1.x).
+      IBKR_HOST: ${IBKR_HOST:-host.docker.internal}
+      IBKR_PORT: ${IBKR_PORT:-7497}
+      IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-10}
+      IBKR_READONLY: ${IBKR_READONLY:-true}
+      IBKR_RECONNECT_DELAY: ${IBKR_RECONNECT_DELAY:-5}
+
+      # ── Dashboard ──────────────────────────────────────────────────────────
+      DASH_HOST: 0.0.0.0
+      DASH_PORT: 8050
+      REFRESH_INTERVAL: ${REFRESH_INTERVAL:-60}
+      OPEN_BROWSER: "0"
+
+      # ── Optional: Anthropic key for AI analysis ────────────────────────────
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+    restart: unless-stopped
+
+    # Give containers access to the host network on Linux
+    # (host.docker.internal does not work on Linux without this)
+    # Uncomment the two lines below if you're on Linux:
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+

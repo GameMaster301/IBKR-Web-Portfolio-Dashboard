@@ -1,0 +1,14 @@
+ibkr:
+  host: 127.0.0.1
+  port: 7497
+  client_id: 1
+  readonly: true
+  reconnect_delay_seconds: 15
+
+dashboard:
+  host: 127.0.0.1
+  port: 8050
+  refresh_interval_seconds: 60
+
+display:
+  eurusd_fallback: 1.08

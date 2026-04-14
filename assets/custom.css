@@ -1,0 +1,26 @@
+/* Toast fade-out animation
+   The toast div gets this class.
+   It is visible for ~3 s, then fades + slides down over 0.4 s.
+   Because Dash re-mounts the element each time (via `key=`), the
+   animation restarts automatically on every new message. */
+@keyframes toastFadeOut {
+  0%   { opacity: 1; transform: translateY(0);   }
+  80%  { opacity: 1; transform: translateY(0);   }
+  100% { opacity: 0; transform: translateY(8px); }
+}
+
+.toast-msg {
+  animation: toastFadeOut 3.5s ease forwards;
+}
+
+/* Keyboard-hint tooltip shown briefly on first load */
+@keyframes hintFade {
+  0%   { opacity: 0; }
+  15%  { opacity: 1; }
+  75%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.kb-hint {
+  animation: hintFade 4s ease forwards;
+}
