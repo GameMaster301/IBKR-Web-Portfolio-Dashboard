@@ -6,10 +6,12 @@ AI portfolio analysis and chat — two modes:
 
 2. Claude API (if ANTHROPIC_API_KEY is set):
    Calls claude-sonnet-4-6 for richer, natural-language responses and
-   true multi-turn conversation with full portfolio context.
+   true multi-turn conversation with full portfolio context, including
+   sector/geo exposure, upcoming earnings, and macro valuation indicators.
 """
 
 import os
+from datetime import datetime
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -53,6 +55,109 @@ def _portfolio_context_lines(positions: list, summary: dict, account: dict) -> s
         f"HOLDINGS ({len(positions)} positions)\n"
         + "\n".join(holdings_lines)
     )
+
+
+def _market_context_lines(market_data: dict | None, valuation_data: dict | None) -> str:
+    """
+    Format market intel and valuation indicators as a compact text block.
+    Returns an empty string when no data is available.
+    """
+    if not market_data and not valuation_data:
+        return ""
+
+    lines = []
+
+    if market_data:
+        sg = market_data.get('sector_geo') or {}
+
+        # Aggregate sector weights
+        if sg:
+            sector_weights: dict[str, float] = {}
+            # sector_geo is {ticker: {sector, industry, country, longName}}
+            # We don't have per-ticker weights here, so just list unique sectors
+            sectors_seen = []
+            for ticker_info in sg.values():
+                s = ticker_info.get('sector', 'Unknown')
+                if s and s not in sectors_seen:
+                    sectors_seen.append(s)
+            if sectors_seen:
+                lines.append(f"SECTORS HELD: {', '.join(sectors_seen[:8])}")
+
+            # Geographic breakdown
+            geos_seen = []
+            for ticker_info in sg.values():
+                c = ticker_info.get('country', 'Unknown')
+                if c and c not in geos_seen:
+                    geos_seen.append(c)
+            if geos_seen:
+                lines.append(f"GEOGRAPHIES: {', '.join(geos_seen[:6])}")
+
+        # Upcoming earnings
+        earnings = market_data.get('earnings') or {}
+        if earnings:
+            upcoming = []
+            today = datetime.now().date()
+            for ticker, info in earnings.items():
+                date_str = info.get('next_date')
+                if date_str:
+                    try:
+                        ed = datetime.strptime(str(date_str)[:10], '%Y-%m-%d').date()
+                        days_away = (ed - today).days
+                        if 0 <= days_away <= 45:
+                            avg_move = info.get('avg_1d_move')
+                            move_str = f", avg ±{abs(avg_move):.1f}% post-earnings" if avg_move else ""
+                            upcoming.append((ticker, str(date_str)[:10], days_away, move_str))
+                    except Exception:
+                        pass
+            if upcoming:
+                upcoming.sort(key=lambda x: x[2])
+                lines.append(
+                    "UPCOMING EARNINGS (next 45 days): "
+                    + "; ".join(
+                        f"{t} on {d} ({n}d away{mv})" for t, d, n, mv in upcoming
+                    )
+                )
+
+    if valuation_data:
+        val_parts = []
+
+        b = valuation_data.get('buffett') or {}
+        if b and b.get('value'):
+            zone = _buffett_zone_label(b['value'])
+            val_parts.append(f"Buffett Indicator {b['value']:.0f}% ({zone})")
+
+        pe = valuation_data.get('sp500_pe') or {}
+        if pe:
+            t = pe.get('trailing_pe')
+            f_ = pe.get('forward_pe')
+            if t:
+                val_parts.append(f"S&P 500 trailing P/E {t:.1f}×")
+            if f_:
+                val_parts.append(f"forward P/E {f_:.1f}×")
+
+        cape = valuation_data.get('cape') or {}
+        if cape and cape.get('current'):
+            zone = _cape_zone_label(cape['current'])
+            val_parts.append(f"Shiller CAPE {cape['current']:.1f} ({zone})")
+
+        if val_parts:
+            lines.append("MARKET VALUATION: " + " | ".join(val_parts))
+
+    return "\n".join(lines) if lines else ""
+
+
+def _buffett_zone_label(value: float) -> str:
+    if value < 80:  return 'undervalued'
+    if value < 100: return 'fair value'
+    if value < 150: return 'moderately overvalued'
+    return 'significantly overvalued'
+
+
+def _cape_zone_label(value: float) -> str:
+    if value < 15:  return 'undervalued'
+    if value < 25:  return 'fair value'
+    if value < 35:  return 'elevated'
+    return 'historically extreme'
 
 
 # ── Rule-based portfolio analysis ─────────────────────────────────────────────
@@ -160,7 +265,8 @@ def _rule_based_analysis(positions: list, summary: dict, account: dict) -> str:
 
 # ── Rule-based chat ───────────────────────────────────────────────────────────
 
-def _rule_based_chat(question: str, positions: list, summary: dict, account: dict) -> str:
+def _rule_based_chat(question: str, positions: list, summary: dict, account: dict,
+                     market_data: dict | None = None) -> str:
     """Answer common portfolio questions without an API key."""
     q = question.lower().strip()
 
@@ -263,38 +369,103 @@ def _rule_based_chat(question: str, positions: list, summary: dict, account: dic
             "Set ANTHROPIC_API_KEY for a detailed rebalancing analysis."
         )
 
+    # Sector / industry exposure
+    if any(w in q for w in ['sector', 'industry', 'sector break']):
+        if market_data and market_data.get('sector_geo'):
+            sg = market_data['sector_geo']
+            sector_tickers: dict[str, list] = {}
+            for ticker_info_key, ticker_info in sg.items():
+                s = ticker_info.get('sector', 'Unknown')
+                sector_tickers.setdefault(s, []).append(ticker_info_key)
+            lines = [f"**{s}**: {', '.join(tks)}" for s, tks in sorted(sector_tickers.items())]
+            return "Sector breakdown:\n" + "\n".join(lines)
+        return (
+            "Sector data is loading — check the Sector & Geography chart below, "
+            "or set ANTHROPIC_API_KEY for a detailed sector analysis."
+        )
+
+    # Geography
+    if any(w in q for w in ['geo', 'country', 'region', 'international', 'global', 'us market', 'europe']):
+        if market_data and market_data.get('sector_geo'):
+            sg = market_data['sector_geo']
+            country_tickers: dict[str, list] = {}
+            for ticker_info_key, ticker_info in sg.items():
+                c = ticker_info.get('country', 'Unknown')
+                country_tickers.setdefault(c, []).append(ticker_info_key)
+            lines = [f"**{c}**: {', '.join(tks)}" for c, tks in sorted(country_tickers.items())]
+            return "Geographic breakdown:\n" + "\n".join(lines)
+        return "Geographic data is loading — check the Sector & Geography chart below."
+
+    # Earnings
+    if any(w in q for w in ['earning', 'report', 'earnings date', 'earnings soon', 'upcoming']):
+        if market_data and market_data.get('earnings'):
+            earnings = market_data['earnings']
+            today = datetime.now().date()
+            upcoming = []
+            for ticker, info in earnings.items():
+                date_str = info.get('next_date')
+                if date_str:
+                    try:
+                        ed = datetime.strptime(str(date_str)[:10], '%Y-%m-%d').date()
+                        days_away = (ed - today).days
+                        if 0 <= days_away <= 90:
+                            avg_move = info.get('avg_1d_move')
+                            upcoming.append((ticker, str(date_str)[:10], days_away, avg_move))
+                    except Exception:
+                        pass
+            if upcoming:
+                upcoming.sort(key=lambda x: x[2])
+                lines = []
+                for ticker, d, n, avg in upcoming:
+                    move_str = f" (avg ±{abs(avg):.1f}% post-earnings)" if avg else ""
+                    lines.append(f"**{ticker}** reports {d} — {n} days away{move_str}")
+                return "Upcoming earnings in your portfolio:\n" + "\n".join(lines)
+            return "No earnings reports found within the next 90 days for your holdings."
+        return "Earnings data is loading — check the Earnings Calendar section below."
+
     # Default
     return (
         "I can answer questions like: *What's my largest position?*, *What's my best performer?*, "
-        "*How much cash do I have?*, *What's today's P&L?*, *Should I rebalance?*. "
+        "*How much cash do I have?*, *What's today's P&L?*, *Should I rebalance?*, "
+        "*What sectors do I hold?*, *Any earnings soon?*. "
         "Set **ANTHROPIC_API_KEY** to unlock free-form AI conversation."
     )
 
 
 # ── Claude API analyser ───────────────────────────────────────────────────────
 
-def _claude_analysis(positions: list, summary: dict, account: dict) -> str:
+def _claude_analysis(positions: list, summary: dict, account: dict,
+                     market_data: dict | None = None,
+                     valuation_data: dict | None = None) -> str:
     """Call the Anthropic Claude API for a full portfolio analysis."""
     try:
         import anthropic
     except ImportError:
         return _rule_based_analysis(positions, summary, account)
 
-    context = _portfolio_context_lines(positions, summary, account)
+    portfolio_ctx = _portfolio_context_lines(positions, summary, account)
+    market_ctx    = _market_context_lines(market_data, valuation_data)
+
+    context_block = portfolio_ctx
+    if market_ctx:
+        context_block += f"\n\nMARKET CONTEXT\n{market_ctx}"
+
     prompt = (
-        f"PORTFOLIO SNAPSHOT\n{context}\n\n"
+        f"PORTFOLIO SNAPSHOT\n{context_block}\n\n"
         "Give 3-4 concise, specific observations covering:\n"
         "1. Concentration risk (any single position or sector dominating)\n"
         "2. P&L health (what's working, what's dragging)\n"
-        "3. One actionable suggestion based on the data above\n\n"
-        "Be direct and data-driven. No generic disclaimers."
+        "3. Market context — if valuation data is provided, note whether the broader "
+        "market environment supports holding/adding vs. being defensive\n"
+        "4. One actionable suggestion based on the data above\n\n"
+        "Be direct and data-driven. No generic disclaimers. Use exact numbers."
     )
 
     client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
     try:
         response = client.messages.create(
             model='claude-sonnet-4-6',
-            max_tokens=600,
+            max_tokens=700,
             system="You are a concise portfolio analyst reviewing a real IBKR brokerage account.",
             messages=[{'role': 'user', 'content': prompt}],
         )
@@ -315,7 +486,9 @@ def _claude_analysis(positions: list, summary: dict, account: dict) -> str:
 
 # ── Claude API chat ───────────────────────────────────────────────────────────
 
-def _claude_chat(question: str, history: list, positions: list, summary: dict, account: dict) -> str:
+def _claude_chat(question: str, history: list, positions: list, summary: dict, account: dict,
+                 market_data: dict | None = None,
+                 valuation_data: dict | None = None) -> str:
     """
     Multi-turn portfolio Q&A using Claude.
     history is a list of {'role': 'user'|'assistant', 'content': str} dicts.
@@ -323,14 +496,20 @@ def _claude_chat(question: str, history: list, positions: list, summary: dict, a
     try:
         import anthropic
     except ImportError:
-        return _rule_based_chat(question, positions, summary, account)
+        return _rule_based_chat(question, positions, summary, account, market_data)
 
-    context = _portfolio_context_lines(positions, summary, account)
+    portfolio_ctx = _portfolio_context_lines(positions, summary, account)
+    market_ctx    = _market_context_lines(market_data, valuation_data)
+
+    context_block = portfolio_ctx
+    if market_ctx:
+        context_block += f"\n\nMARKET CONTEXT\n{market_ctx}"
+
     system = (
         "You are a concise, data-driven portfolio analyst. "
         "Answer questions about the following IBKR portfolio. "
-        "Be specific, use the numbers, and keep answers under 3 sentences.\n\n"
-        f"PORTFOLIO\n{context}"
+        "Be specific, use the exact numbers provided, and keep answers under 4 sentences.\n\n"
+        f"PORTFOLIO\n{context_block}"
     )
 
     messages = list(history) + [{'role': 'user', 'content': question}]
@@ -339,13 +518,158 @@ def _claude_chat(question: str, history: list, positions: list, summary: dict, a
     try:
         response = client.messages.create(
             model='claude-sonnet-4-6',
-            max_tokens=400,
+            max_tokens=450,
             system=system,
             messages=messages,
         )
         return response.content[0].text
     except anthropic.AuthenticationError:
-        return _rule_based_chat(question, positions, summary, account)
+        return _rule_based_chat(question, positions, summary, account, market_data)
+    except anthropic.RateLimitError:
+        return "Rate limit reached — please wait a moment and try again."
+    except Exception as e:
+        return f"Error: {e}"
+
+
+# ── Per-position analysis ─────────────────────────────────────────────────────
+
+def _rule_based_position_analysis(ticker: str, position: dict, positions: list) -> str:
+    """Quick rule-based analysis for a single position."""
+    price     = position.get('current_price', 0) or 0
+    qty       = position.get('quantity', 0) or 0
+    avg_cost  = position.get('average_cost', 0) or 0
+    pnl_pct   = position.get('pnl_pct', 0) or 0
+    alloc_pct = position.get('allocation_pct', 0) or 0
+    low_52w   = position.get('low_52w')
+    high_52w  = position.get('high_52w')
+
+    lines = []
+
+    # P&L status
+    unrealized = (price - avg_cost) * qty if avg_cost else 0
+    if pnl_pct > 20:
+        lines.append(
+            f"{ticker} is up {pnl_pct:+.1f}% from your average cost of ${avg_cost:,.2f}, "
+            f"representing ${unrealized:+,.0f} in unrealized gains."
+        )
+    elif pnl_pct < -10:
+        lines.append(
+            f"{ticker} is down {pnl_pct:+.1f}% from your average cost of ${avg_cost:,.2f}, "
+            f"a current loss of ${unrealized:+,.0f}."
+        )
+    else:
+        lines.append(
+            f"{ticker} is {pnl_pct:+.1f}% vs your avg cost of ${avg_cost:,.2f} "
+            f"(${unrealized:+,.0f} unrealized)."
+        )
+
+    # Weight / concentration
+    if alloc_pct > 25:
+        lines.append(
+            f"At {alloc_pct:.1f}% of the portfolio this is a high-concentration position — "
+            f"adverse moves here will have an outsized impact on total value."
+        )
+    elif alloc_pct < 3:
+        lines.append(
+            f"At {alloc_pct:.1f}% this is a small position; its impact on overall "
+            f"performance is limited in either direction."
+        )
+    else:
+        lines.append(f"Weight: {alloc_pct:.1f}% of the portfolio.")
+
+    # 52-week range
+    if low_52w and high_52w and high_52w > low_52w:
+        range_pct = (price - low_52w) / (high_52w - low_52w) * 100
+        if range_pct > 85:
+            lines.append(
+                f"Trading near its 52-week high — top {100 - range_pct:.0f}% of the "
+                f"${low_52w:,.2f}–${high_52w:,.2f} range."
+            )
+        elif range_pct < 15:
+            lines.append(
+                f"Trading near its 52-week low — bottom {range_pct:.0f}% of the "
+                f"${low_52w:,.2f}–${high_52w:,.2f} range."
+            )
+        else:
+            lines.append(
+                f"52-week range: ${low_52w:,.2f}–${high_52w:,.2f} "
+                f"(currently at {range_pct:.0f}% of range)."
+            )
+
+    lines.append("Set ANTHROPIC_API_KEY to get a deeper AI-driven thesis review for this position.")
+    return "\n\n".join(lines)
+
+
+def _claude_position_analysis(ticker: str, position: dict, positions: list,
+                               summary: dict, account: dict,
+                               market_data: dict | None = None) -> str:
+    """Claude-powered deep dive for a single position."""
+    try:
+        import anthropic
+    except ImportError:
+        return _rule_based_position_analysis(ticker, position, positions)
+
+    portfolio_ctx = _portfolio_context_lines(positions, summary, account)
+
+    pos_detail = (
+        f"Ticker:        {ticker}\n"
+        f"Quantity:      {int(position.get('quantity', 0))} shares\n"
+        f"Avg cost:      ${position.get('average_cost', 0):,.2f}\n"
+        f"Current price: ${position.get('current_price', 0):,.2f}\n"
+        f"Market value:  ${position.get('market_value', 0):,.2f}\n"
+        f"P&L:           {position.get('pnl_pct', 0):+.2f}% "
+        f"(${position.get('unrealized_pnl', 0):+,.0f})\n"
+        f"Weight:        {position.get('allocation_pct', 0):.1f}% of portfolio\n"
+        f"Daily change:  {position.get('daily_change_pct') or 0:+.2f}%\n"
+    )
+    if position.get('low_52w') and position.get('high_52w'):
+        low, high = position['low_52w'], position['high_52w']
+        price = position.get('current_price', 0) or 0
+        rng_pct = (price - low) / (high - low) * 100 if high > low else 0
+        pos_detail += (
+            f"52w range:     ${low:,.2f} – ${high:,.2f} "
+            f"(at {rng_pct:.0f}% of range)\n"
+        )
+
+    # Add earnings context if available
+    earnings_note = ""
+    if market_data and market_data.get('earnings') and ticker in market_data['earnings']:
+        ei = market_data['earnings'][ticker]
+        next_date = ei.get('next_date')
+        avg_move  = ei.get('avg_1d_move')
+        if next_date:
+            today = datetime.now().date()
+            try:
+                ed = datetime.strptime(str(next_date)[:10], '%Y-%m-%d').date()
+                days_away = (ed - today).days
+                earnings_note = f"\nNext earnings: {next_date} ({days_away} days away)"
+                if avg_move:
+                    earnings_note += f", historical avg ±{abs(avg_move):.1f}% 1-day move"
+            except Exception:
+                pass
+
+    prompt = (
+        f"POSITION DETAIL\n{pos_detail}{earnings_note}\n\n"
+        f"FULL PORTFOLIO CONTEXT\n{portfolio_ctx}\n\n"
+        f"Give 3 specific observations about this {ticker} position:\n"
+        f"1. How it fits in the portfolio (weight, relative performance vs other positions)\n"
+        f"2. P&L health — is it near the cost basis, a 52-week extreme, or a meaningful level?\n"
+        f"3. One concrete action to consider (hold, trim, add, set a stop-loss) with a specific "
+        f"reason tied to the numbers above\n\n"
+        f"Be direct. No generic disclaimers. Use exact numbers from the data."
+    )
+
+    client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+    try:
+        response = client.messages.create(
+            model='claude-sonnet-4-6',
+            max_tokens=450,
+            system="You are a concise portfolio analyst reviewing a specific IBKR position.",
+            messages=[{'role': 'user', 'content': prompt}],
+        )
+        return response.content[0].text
+    except anthropic.AuthenticationError:
+        return _rule_based_position_analysis(ticker, position, positions)
     except anthropic.RateLimitError:
         return "Rate limit reached — please wait a moment and try again."
     except Exception as e:
@@ -354,21 +678,42 @@ def _claude_chat(question: str, history: list, positions: list, summary: dict, a
 
 # ── Public entry points ───────────────────────────────────────────────────────
 
-def analyse_portfolio(positions: list, summary: dict, account: dict) -> str:
+def analyse_portfolio(positions: list, summary: dict, account: dict,
+                      market_data: dict | None = None,
+                      valuation_data: dict | None = None) -> str:
     """
     One-shot portfolio analysis.
     Uses Claude when ANTHROPIC_API_KEY is set; rule-based otherwise.
+    Optionally accepts market intel (sector/earnings) and valuation data
+    to enrich the Claude prompt with broader market context.
     """
     if os.environ.get('ANTHROPIC_API_KEY'):
-        return _claude_analysis(positions, summary, account)
+        return _claude_analysis(positions, summary, account, market_data, valuation_data)
     return _rule_based_analysis(positions, summary, account)
 
 
-def chat_portfolio(question: str, history: list, positions: list, summary: dict, account: dict) -> str:
+def chat_portfolio(question: str, history: list, positions: list, summary: dict, account: dict,
+                   market_data: dict | None = None,
+                   valuation_data: dict | None = None) -> str:
     """
     Answer a portfolio question, optionally using prior conversation history.
     Uses Claude when ANTHROPIC_API_KEY is set; keyword-based fallback otherwise.
+    market_data and valuation_data are passed through to enrich the Claude system prompt.
     """
     if os.environ.get('ANTHROPIC_API_KEY'):
-        return _claude_chat(question, history, positions, summary, account)
-    return _rule_based_chat(question, positions, summary, account)
+        return _claude_chat(question, history, positions, summary, account,
+                            market_data, valuation_data)
+    return _rule_based_chat(question, positions, summary, account, market_data)
+
+
+def analyse_position(ticker: str, position: dict, positions: list,
+                     summary: dict, account: dict,
+                     market_data: dict | None = None) -> str:
+    """
+    Per-position AI analysis — deep dive on a single holding.
+    Uses Claude when ANTHROPIC_API_KEY is set; rule-based otherwise.
+    """
+    if os.environ.get('ANTHROPIC_API_KEY'):
+        return _claude_position_analysis(ticker, position, positions, summary, account,
+                                         market_data)
+    return _rule_based_position_analysis(ticker, position, positions)

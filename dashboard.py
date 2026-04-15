@@ -15,7 +15,7 @@ from config import cfg
 from ibkr_client import fetch_all_data, connection_status
 from data_processor import process_positions, get_summary
 from analytics import get_dividend_data_yf
-from ai_analyst import analyse_portfolio, chat_portfolio
+from ai_analyst import analyse_portfolio, chat_portfolio, analyse_position
 from market_intel import (get_sector_geo,
                            get_earnings_data, compute_efficient_frontier)
 from market_valuation import (get_buffett_indicator, get_sp500_pe,
@@ -236,6 +236,9 @@ app.layout = html.Div([
                   ("Should I rebalance?","Should I rebalance my portfolio?"),
                   ("Today's P&L",       "What is today's P&L?"),
                   ("Cash position",     "How much cash do I have?"),
+                  ("Sector exposure",   "What sectors do I hold?"),
+                  ("Earnings soon?",    "Any upcoming earnings in my portfolio?"),
+                  ("Worst performer",   "What is my worst performer?"),
               ]
             ],
         ], style={'display': 'flex', 'flexWrap': 'wrap', 'alignItems': 'center',
@@ -871,22 +874,79 @@ def show_position_detail(ticker, data):
         range_section = None
 
     return html.Div([
-        # Header
+        # Header row: ticker + price + daily change + AI button
         html.Div([
-            html.Span(ticker, style={'fontWeight': '700', 'fontSize': '17px', 'color': '#111'}),
-            html.Span(f"${price:,.2f}",
-                      style={'fontSize': '17px', 'color': '#111', 'marginLeft': '12px'}),
-            html.Span(chg_str,
-                      style={'fontSize': '15px', 'color': chg_color, 'marginLeft': '12px'}),
-        ], style={'display': 'flex', 'alignItems': 'center'}),
+            html.Div([
+                html.Span(ticker, style={'fontWeight': '700', 'fontSize': '17px', 'color': '#111'}),
+                html.Span(f"${price:,.2f}",
+                          style={'fontSize': '17px', 'color': '#111', 'marginLeft': '12px'}),
+                html.Span(chg_str,
+                          style={'fontSize': '15px', 'color': chg_color, 'marginLeft': '12px'}),
+            ], style={'display': 'flex', 'alignItems': 'center'}),
+            html.Button("✦ AI Analysis", id='position-ai-btn', n_clicks=0, style={
+                'background': 'transparent', 'border': '1px solid #378ADD',
+                'borderRadius': '8px', 'padding': '5px 14px',
+                'fontSize': '13px', 'cursor': 'pointer', 'color': '#378ADD',
+                'fontFamily': 'inherit', 'fontWeight': '500',
+            }),
+        ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center'}),
         range_section,
         stats,
+        # AI output — populated by run_position_ai_analysis callback
+        html.Div(id='position-ai-output'),
     ], style={
         **CARD,
         'marginTop': '14px',
         'background': '#fafafa',
         'borderLeft': '3px solid #378ADD',
     })
+
+
+# ── Per-position AI analysis ──────────────────────────────────────────────────
+
+@app.callback(
+    Output('position-ai-output', 'children'),
+    Input('position-ai-btn', 'n_clicks'),
+    State('selected-ticker', 'data'),
+    State('portfolio-data', 'data'),
+    State('market-intel-data', 'data'),
+    prevent_initial_call=True,
+)
+def run_position_ai_analysis(_, ticker, portfolio_data, market_data):
+    if not ticker or not portfolio_data or not portfolio_data.get('positions'):
+        return None
+
+    positions = portfolio_data['positions']
+    matches   = [p for p in positions if p.get('ticker') == ticker]
+    if not matches:
+        return None
+
+    position = matches[0]
+    text = analyse_position(
+        ticker=ticker,
+        position=position,
+        positions=positions,
+        summary=portfolio_data.get('summary', {}),
+        account=portfolio_data.get('account', {}),
+        market_data=market_data,
+    )
+
+    using_claude = bool(os.environ.get('ANTHROPIC_API_KEY'))
+    label        = "✦ Claude" if using_claude else "✦ Built-in Analysis"
+    label_color  = '#378ADD' if using_claude else '#888'
+
+    paragraphs = [line.strip() for line in text.split('\n') if line.strip()]
+
+    return html.Div([
+        html.Div([
+            html.Span(label, style={'color': label_color, 'fontWeight': '600', 'fontSize': '13px'}),
+            html.Span(f" · {ticker}", style={'color': '#888', 'fontSize': '13px'}),
+        ], style={'marginTop': '18px', 'paddingTop': '14px', 'borderTop': '0.5px solid #e8e8e8',
+                  'marginBottom': '10px'}),
+        *[html.P(p, style={'fontSize': '14px', 'lineHeight': '1.7', 'margin': '0 0 8px',
+                           'color': '#222'})
+          for p in paragraphs],
+    ])
 
 
 # ── Dividends ─────────────────────────────────────────────────────────────────
@@ -1046,9 +1106,11 @@ def update_toast(*_):
     Output('ai-analysis-output', 'children'),
     Input('ai-analyse-btn', 'n_clicks'),
     State('portfolio-data', 'data'),
+    State('market-intel-data', 'data'),
+    State('valuation-data', 'data'),
     prevent_initial_call=True,
 )
-def run_ai_analysis(_, data):
+def run_ai_analysis(_, data, market_data, valuation_data):
     if not data or not data.get('positions'):
         return html.P(
             "No portfolio data available — connect to IB Gateway or TWS and wait for the first refresh.",
@@ -1059,6 +1121,8 @@ def run_ai_analysis(_, data):
         positions=data['positions'],
         summary=data.get('summary', {}),
         account=data.get('account', {}),
+        market_data=market_data,
+        valuation_data=valuation_data,
     )
 
     ts = datetime.now().strftime('%H:%M:%S')
@@ -1099,9 +1163,12 @@ def run_ai_analysis(_, data):
     State('chat-input', 'value'),
     State('chat-history', 'data'),
     State('portfolio-data', 'data'),
+    State('market-intel-data', 'data'),
+    State('valuation-data', 'data'),
     prevent_initial_call=True,
 )
-def handle_chat(send_clicks, input_submit, chip_clicks, question, history, portfolio_data):
+def handle_chat(send_clicks, input_submit, chip_clicks, question, history,
+                portfolio_data, market_data, valuation_data):
     # Determine which input fired
     triggered = ctx.triggered_id
 
@@ -1123,6 +1190,8 @@ def handle_chat(send_clicks, input_submit, chip_clicks, question, history, portf
             positions=portfolio_data['positions'],
             summary=portfolio_data.get('summary', {}),
             account=portfolio_data.get('account', {}),
+            market_data=market_data,
+            valuation_data=valuation_data,
         )
 
     # Update history (keep last 10 turns to stay within context limits)
