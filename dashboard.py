@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 import dash
 from dash import dcc, html, no_update, dash_table
@@ -14,7 +15,7 @@ from config import cfg
 from ibkr_client import fetch_all_data, connection_status
 from data_processor import process_positions, get_summary
 from analytics import get_dividend_data_yf
-from ai_analyst import analyse_portfolio
+from ai_analyst import analyse_portfolio, chat_portfolio
 from market_intel import (get_sector_geo,
                            get_earnings_data, compute_efficient_frontier)
 from market_valuation import (get_buffett_indicator, get_sp500_pe,
@@ -81,7 +82,14 @@ app.layout = html.Div([
                 html.H1("Portfolio", style={'margin': '0', 'fontSize': '22px', 'fontWeight': '600', 'color': '#111'}),
                 html.P(id='last-updated', style={'margin': '4px 0 0', 'color': '#888', 'fontSize': '14px'}),
             ]),
-            html.Div(id='connection-badge'),
+            html.Div([
+                html.Div(id='connection-badge'),
+                html.Button("↓ PDF", id='export-pdf-btn', n_clicks=0, style={
+                    'fontSize': '13px', 'color': '#555', 'background': '#f5f5f5',
+                    'border': '0.5px solid #ddd', 'borderRadius': '8px',
+                    'padding': '6px 14px', 'cursor': 'pointer',
+                }),
+            ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px'}),
         ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-start'}),
     ], id='sticky-header', style={
         'position': 'sticky', 'top': '0', 'zIndex': '100',
@@ -177,29 +185,91 @@ app.layout = html.Div([
         'borderTop': '0.5px solid #f0f0f0',
     }),
 
-    # AI analysis
+    # AI analysis + chat
     html.Div([
+        # Header row
         html.Div([
             html.Div([
                 section_label("AI Analysis"),
-                html.Span("Get a natural language summary of your portfolio's risk, "
-                          "performance and key opportunities.",
+                html.Span("Portfolio insights and Q&A — works instantly, no setup required.",
                           style={'fontSize': '14px', 'color': '#888',
                                  'marginTop': '-12px', 'display': 'block',
                                  'marginBottom': '6px', 'lineHeight': '1.5',
-                                 'maxWidth': '420px'}),
-                html.Span("Powered by Claude",
-                          style={'fontSize': '13px', 'color': '#bbb',
-                                 'display': 'block', 'marginBottom': '17px'}),
+                                 'maxWidth': '480px'}),
+                html.Span(
+                    "Powered by Claude" if os.environ.get('ANTHROPIC_API_KEY')
+                    else "Built-in analysis · set ANTHROPIC_API_KEY to upgrade to Claude",
+                    style={'fontSize': '13px', 'color': '#bbb',
+                           'display': 'block', 'marginBottom': '17px'},
+                ),
             ]),
             html.Button("✦ Analyse Portfolio", id='ai-analyse-btn', n_clicks=0, style={
                 'background': '#378ADD', 'border': 'none', 'borderRadius': '8px',
                 'padding': '8px 20px', 'fontSize': '15px', 'cursor': 'pointer',
                 'color': '#fff', 'fontFamily': 'inherit', 'fontWeight': '500',
-                'letterSpacing': '0.02em',
+                'letterSpacing': '0.02em', 'whiteSpace': 'nowrap',
             }),
         ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-start'}),
+
+        # Analysis output
         html.Div(id='ai-analysis-output'),
+
+        # Divider
+        html.Hr(style={'border': 'none', 'borderTop': '0.5px solid #f0f0f0',
+                       'margin': '24px 0 18px'}),
+
+        # Quick-action chips
+        html.Div([
+            html.Span("Ask:", style={'fontSize': '13px', 'color': '#aaa',
+                                     'marginRight': '10px', 'lineHeight': '32px'}),
+            *[html.Button(label, id={'type': 'chip-btn', 'index': question},
+                          n_clicks=0, style={
+                              'background': '#f5f5f5', 'border': '1px solid #e8e8e8',
+                              'borderRadius': '16px', 'padding': '5px 14px',
+                              'fontSize': '13px', 'cursor': 'pointer', 'color': '#444',
+                              'fontFamily': 'inherit', 'marginRight': '8px',
+                              'marginBottom': '8px',
+                          })
+              for label, question in [
+                  ("Biggest risk",       "What is my biggest risk?"),
+                  ("Best performer",     "What is my best performer?"),
+                  ("Should I rebalance?","Should I rebalance my portfolio?"),
+                  ("Today's P&L",       "What is today's P&L?"),
+                  ("Cash position",     "How much cash do I have?"),
+              ]
+            ],
+        ], style={'display': 'flex', 'flexWrap': 'wrap', 'alignItems': 'center',
+                  'marginBottom': '16px'}),
+
+        # Chat thread
+        html.Div(id='chat-thread', style={
+            'maxHeight': '320px', 'overflowY': 'auto',
+            'display': 'flex', 'flexDirection': 'column', 'gap': '10px',
+            'marginBottom': '14px',
+        }),
+
+        # Chat input row
+        html.Div([
+            dcc.Input(
+                id='chat-input',
+                type='text',
+                placeholder='Ask anything about your portfolio…',
+                debounce=False,
+                n_submit=0,
+                style={
+                    'flex': '1', 'border': '1px solid #e8e8e8', 'borderRadius': '8px',
+                    'padding': '9px 14px', 'fontSize': '14px', 'fontFamily': 'inherit',
+                    'outline': 'none', 'color': '#111',
+                },
+            ),
+            html.Button("Send →", id='chat-send-btn', n_clicks=0, style={
+                'background': '#111', 'border': 'none', 'borderRadius': '8px',
+                'padding': '9px 18px', 'fontSize': '14px', 'cursor': 'pointer',
+                'color': '#fff', 'fontFamily': 'inherit', 'marginLeft': '8px',
+                'fontWeight': '500',
+            }),
+        ], style={'display': 'flex', 'alignItems': 'center'}),
+
     ], style={**CARD, 'marginTop': '24px'}),
 
     # ── Toast notification container ──────────────────────────────────────────
@@ -231,6 +301,7 @@ app.layout = html.Div([
     dcc.Store(id='valuation-data'),         # macro valuation indicators, 4-h cache
     dcc.Store(id='connection-status', data='loading'),
     dcc.Store(id='selected-ticker', data=None),
+    dcc.Store(id='chat-history', data=[]),
 
 ], id='app-root', style={
     'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -328,20 +399,21 @@ def update_status(status, data):
     ts = f"Updated {datetime.now().strftime('%H:%M:%S')}"
 
     if status == 'loading':
-        return status_banner("⏳", "Connecting to TWS...",
+        return status_banner("⏳", "Connecting to IBKR...",
                              "Fetching your portfolio data. This takes a few seconds.", '#fafafa'), \
                badge("Connecting...", '#888', '#f5f5f5', '#e0e0e0'), ""
 
     if status == 'disconnected':
-        return status_banner("🔌", "Not connected to TWS",
-                             "Make sure TWS is open and logged in — the dashboard reconnects automatically.\n"
-                             "In TWS: Edit → Global Configuration → API → Settings → Enable ActiveX and Socket Clients → Port 7497.",
+        return status_banner("🔌", "Not connected to IBKR",
+                             "Make sure IB Gateway or TWS is open and logged in — the dashboard reconnects automatically.\n"
+                             "IB Gateway: Configure → Settings → API → Settings → Enable ActiveX and Socket Clients → Port 4002 (paper) / 4001 (live).\n"
+                             "TWS: Edit → Global Configuration → API → Settings → Enable ActiveX and Socket Clients → Port 7497 (paper) / 7496 (live).",
                              '#fef2f2'), \
                badge("● Disconnected", '#dc2626', '#fef2f2', '#fecaca'), ts
 
     if status == 'no_positions':
         return status_banner("📭", "No positions found",
-                             "Connected to TWS successfully, but your account has no open positions.", '#fafafa'), \
+                             "Connected to IBKR successfully, but your account has no open positions.", '#fafafa'), \
                badge("● Connected", '#16a34a', '#f0fdf4', '#bbf7d0'), ts
 
     return None, badge(f"● Live · {_REFRESH_MS // 1000}s", '#16a34a', '#f0fdf4', '#bbf7d0'), ts
@@ -571,15 +643,17 @@ def export_pdf(_, data):
                        textColor=colors.HexColor('#888888'), spaceAfter=14)))
 
     # Summary table
-    total_val  = s.get('total_value', 0)
-    unreal_pnl = s.get('total_unrealized_pnl', 0)
-    daily_pnl  = a.get('daily_pnl') or s.get('total_daily_pnl', 0) or 0
+    total_val   = s.get('total_value', 0)
+    unreal_pnl  = s.get('total_unrealized_pnl', 0)
+    real_pnl    = s.get('total_realized_pnl', 0) or 0
+    daily_pnl   = a.get('daily_pnl') or s.get('total_daily_pnl', 0) or 0
     summary_data = [
         ['Metric', 'USD', 'EUR'],
-        ['Total Value',    f"${total_val:,.2f}",  f"€{total_val/rate:,.2f}"],
+        ['Total Value',    f"${total_val:,.2f}",   f"€{total_val/rate:,.2f}"],
         ['Unrealized P&L', f"${unreal_pnl:+,.2f}", f"€{unreal_pnl/rate:+,.2f}"],
+        ['Realized P&L',   f"${real_pnl:+,.2f}",   f"€{real_pnl/rate:+,.2f}"],
         ["Today's P&L",    f"${daily_pnl:+,.2f}",  f"€{daily_pnl/rate:+,.2f}"],
-        ['Cash',           '—',                   f"€{a.get('cash_eur', 0):,.2f}"],
+        ['Cash',           f"${a.get('cash_usd', 0) or 0:,.2f}", f"€{a.get('cash_eur', 0):,.2f}"],
     ]
     t = Table(summary_data, colWidths=[80*mm, 40*mm, 40*mm])
     t.setStyle(TableStyle([
@@ -593,34 +667,74 @@ def export_pdf(_, data):
         ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
     ]))
     story.append(t)
+    story.append(Spacer(1, 6*mm))
+
+    # Best / worst performer callout
+    best   = s.get('best_performer', '—')
+    worst  = s.get('worst_performer', '—')
+    best_row  = df[df['ticker'] == best].iloc[0]  if best  != '—' and best  in df['ticker'].values else None
+    worst_row = df[df['ticker'] == worst].iloc[0] if worst != '—' and worst in df['ticker'].values else None
+    best_str  = f"{best} ({best_row['pnl_pct']:+.2f}%)"   if best_row  is not None else best
+    worst_str = f"{worst} ({worst_row['pnl_pct']:+.2f}%)" if worst_row is not None else worst
+    perf_data = [
+        ['Best Performer', 'Worst Performer'],
+        [best_str, worst_str],
+    ]
+    pt = Table(perf_data, colWidths=[82*mm, 82*mm])
+    pt.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor('#f5f5f5')),
+        ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, 0), (-1, -1), 9),
+        ('ALIGN',         (0, 0), (-1, -1), 'CENTER'),
+        ('GRID',          (0, 0), (-1, -1), 0.25, colors.HexColor('#e0e0e0')),
+        ('TEXTCOLOR',     (0, 1), (0, 1), colors.HexColor('#166534')),  # best = green
+        ('TEXTCOLOR',     (1, 1), (1, 1), colors.HexColor('#991b1b')),  # worst = red
+        ('FONTNAME',      (0, 1), (-1, 1), 'Helvetica-Bold'),
+        ('TOPPADDING',    (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    story.append(pt)
     story.append(Spacer(1, 10*mm))
 
-    # Holdings table
+    # Holdings table — includes daily change
     story.append(Paragraph("Holdings", ParagraphStyle(
         'h2', parent=styles['Heading2'], fontSize=12, spaceAfter=6)))
-    hold_data = [['Ticker', 'Qty', 'Avg Cost', 'Price', 'Mkt Value', 'P&L', 'P&L %', 'Weight']]
+    hold_data = [['Ticker', 'Qty', 'Avg Cost', 'Price', 'Day %', 'Mkt Value', 'P&L %', 'Weight']]
     for _, row in df.iterrows():
+        day_pct = row.get('daily_change_pct')
+        day_str = f"{day_pct:+.2f}%" if pd.notna(day_pct) and day_pct is not None else '—'
         hold_data.append([
             row['ticker'],
             str(int(row['quantity'])),
             f"${row['avg_cost']:,.2f}",
             f"${row['current_price']:,.2f}",
+            day_str,
             f"${row['market_value']:,.2f}",
-            f"${row['unrealized_pnl']:+,.2f}",
             f"{row['pnl_pct']:+.2f}%",
             f"{row['allocation_pct']:.1f}%",
         ])
-    ht = Table(hold_data, colWidths=[20*mm, 14*mm, 22*mm, 22*mm, 26*mm, 24*mm, 17*mm, 17*mm])
-    ht.setStyle(TableStyle([
+    ht = Table(hold_data, colWidths=[20*mm, 12*mm, 22*mm, 22*mm, 16*mm, 26*mm, 16*mm, 16*mm])
+    # colour positive/negative day % and P&L % cells per row
+    ht_style = [
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f5f5')),
         ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE',   (0, 0), (-1, -1), 8),
         ('ALIGN',      (1, 0), (-1, -1), 'RIGHT'),
+        ('ALIGN',      (0, 0), (0, -1), 'LEFT'),
         ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#e0e0e0')),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fafafa')]),
         ('TOPPADDING',  (0, 0), (-1, -1), 4),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-    ]))
+    ]
+    for i, row in enumerate(df.itertuples(), start=1):
+        day_pct = getattr(row, 'daily_change_pct', None)
+        if day_pct is not None and pd.notna(day_pct):
+            col = colors.HexColor('#166534') if day_pct >= 0 else colors.HexColor('#991b1b')
+            ht_style.append(('TEXTCOLOR', (4, i), (4, i), col))
+        pnl = getattr(row, 'pnl_pct', 0) or 0
+        col = colors.HexColor('#166534') if pnl >= 0 else colors.HexColor('#991b1b')
+        ht_style.append(('TEXTCOLOR', (6, i), (6, i), col))
+    ht.setStyle(TableStyle(ht_style))
     story.append(ht)
 
     doc.build(story)
@@ -937,7 +1051,7 @@ def update_toast(*_):
 def run_ai_analysis(_, data):
     if not data or not data.get('positions'):
         return html.P(
-            "No portfolio data available — connect to TWS and wait for the first refresh.",
+            "No portfolio data available — connect to IB Gateway or TWS and wait for the first refresh.",
             style={'fontSize': '15px', 'color': '#bbb', 'margin': '16px 0 0'},
         )
 
@@ -952,10 +1066,14 @@ def run_ai_analysis(_, data):
     # Split on newlines; render each non-empty line as its own paragraph
     paragraphs = [line.strip() for line in text.split('\n') if line.strip()]
 
+    using_claude = bool(os.environ.get('ANTHROPIC_API_KEY'))
+    label = "✦ Claude" if using_claude else "✦ Built-in Analysis"
+    label_color = '#378ADD' if using_claude else '#888'
+
     return html.Div([
         html.Div([
-            html.Span("✦ Claude", style={
-                'color': '#378ADD', 'fontWeight': '600', 'fontSize': '14px',
+            html.Span(label, style={
+                'color': label_color, 'fontWeight': '600', 'fontSize': '14px',
             }),
             html.Span(f" · {ts}", style={'color': '#888', 'fontSize': '13px'}),
         ], style={
@@ -967,6 +1085,84 @@ def run_ai_analysis(_, data):
             'margin': '0 0 10px', 'color': '#111',
         }) for p in paragraphs],
     ])
+
+
+# ── Portfolio chat ─────────────────────────────────────────────────────────────
+
+@app.callback(
+    Output('chat-thread', 'children'),
+    Output('chat-history', 'data'),
+    Output('chat-input', 'value'),
+    Input('chat-send-btn', 'n_clicks'),
+    Input('chat-input', 'n_submit'),
+    Input({'type': 'chip-btn', 'index': dash.ALL}, 'n_clicks'),
+    State('chat-input', 'value'),
+    State('chat-history', 'data'),
+    State('portfolio-data', 'data'),
+    prevent_initial_call=True,
+)
+def handle_chat(send_clicks, input_submit, chip_clicks, question, history, portfolio_data):
+    # Determine which input fired
+    triggered = ctx.triggered_id
+
+    # Chip button
+    if isinstance(triggered, dict) and triggered.get('type') == 'chip-btn':
+        question = triggered['index']
+    elif not question or not question.strip():
+        return no_update, no_update, no_update
+
+    question = question.strip()
+    history = history or []
+
+    if not portfolio_data or not portfolio_data.get('positions'):
+        answer = "No portfolio data available — connect to IB Gateway or TWS and wait for the first refresh."
+    else:
+        answer = chat_portfolio(
+            question=question,
+            history=history,
+            positions=portfolio_data['positions'],
+            summary=portfolio_data.get('summary', {}),
+            account=portfolio_data.get('account', {}),
+        )
+
+    # Update history (keep last 10 turns to stay within context limits)
+    history = history + [
+        {'role': 'user',      'content': question},
+        {'role': 'assistant', 'content': answer},
+    ]
+    history = history[-20:]   # 10 turns × 2 messages
+
+    # Render chat bubbles
+    bubbles = []
+    for msg in history:
+        is_user = msg['role'] == 'user'
+        # Parse bold markers **text** into spans
+        parts = msg['content'].split('**')
+        rendered = []
+        for i, part in enumerate(parts):
+            if i % 2 == 1:
+                rendered.append(html.Strong(part))
+            else:
+                # parse *italic*
+                italic_parts = part.split('*')
+                for j, ip in enumerate(italic_parts):
+                    rendered.append(html.Em(ip) if j % 2 == 1 else ip)
+
+        bubbles.append(html.Div(
+            rendered,
+            style={
+                'alignSelf':     'flex-end'  if is_user else 'flex-start',
+                'background':    '#378ADD'   if is_user else '#f5f5f5',
+                'color':         '#fff'      if is_user else '#111',
+                'borderRadius':  '14px 14px 4px 14px' if is_user else '14px 14px 14px 4px',
+                'padding':       '10px 14px',
+                'fontSize':      '14px',
+                'lineHeight':    '1.6',
+                'maxWidth':      '80%',
+            },
+        ))
+
+    return bubbles, history, ''
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -995,17 +1191,19 @@ def populate_market_intel(data):
         _last_intel_tickers = None
         return None
 
-    tickers     = [p['ticker'] for p in data['positions']]
-    ticker_key  = tuple(sorted(tickers))
+    tickers    = [p['ticker'] for p in data['positions']]
+    ticker_key = tuple(sorted(tickers))
 
     # If tickers haven't changed the 4-hour cached values are still valid —
     # skip the fetch and leave the store (and all downstream renders) unchanged.
+    # NOTE: _last_intel_tickers is only set AFTER a successful fetch so that a
+    # failed/timed-out fetch is retried on the next 60-second refresh instead of
+    # being silently skipped forever via no_update.
     if ticker_key == _last_intel_tickers:
         return no_update
 
-    _last_intel_tickers = ticker_key
-
-    result = {'tickers': tickers, 'sector_geo': {}, 'earnings': {}}
+    weights = [p.get('allocation_pct', 0) for p in data['positions']]
+    result  = {'tickers': tickers, 'sector_geo': {}, 'earnings': {}, 'frontier': None}
 
     def _fetch_sector():
         return 'sector_geo', get_sector_geo(tickers)
@@ -1013,8 +1211,18 @@ def populate_market_intel(data):
     def _fetch_earnings():
         return 'earnings', get_earnings_data(tickers)
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        futures = [pool.submit(_fetch_sector), pool.submit(_fetch_earnings)]
+    def _fetch_frontier():
+        # Run alongside sector/earnings in the thread pool so the render
+        # callback just displays a pre-computed result — no blocking yfinance
+        # call on the Dash render thread.
+        return 'frontier', compute_efficient_frontier(tickers, weights)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [
+            pool.submit(_fetch_sector),
+            pool.submit(_fetch_earnings),
+            pool.submit(_fetch_frontier),
+        ]
         for f in futures:
             try:
                 key, val = f.result()
@@ -1022,6 +1230,10 @@ def populate_market_intel(data):
             except Exception as e:
                 log.warning("Market intel fetch failed: %s", e)
 
+    # Only mark tickers as done AFTER the fetch completes.  Setting this before
+    # the fetch meant a failed fetch would permanently skip retries for the same
+    # ticker set (no_update returned on every subsequent 60-second refresh).
+    _last_intel_tickers = ticker_key
     return result
 
 
@@ -1306,10 +1518,9 @@ def _render_frontier_inner(intel, port_data):
     if not port_data or 'positions' not in port_data:
         return None
 
-    tickers = intel.get('tickers', [])
-    weights = [p['allocation_pct'] for p in port_data['positions']]
-
-    result = compute_efficient_frontier(tickers, weights)
+    # Use the pre-computed frontier from the store (computed in populate_market_intel
+    # alongside sector/earnings) so this render callback never blocks on yfinance.
+    result = intel.get('frontier')
     if result is None:
         return html.Div(
             html.P("Need at least 2 positions with 90+ days of history.",
@@ -1655,44 +1866,126 @@ def _render_scenarios_inner(intel, port_data):
 
     scenario_cards = [scenario_card(s) for s in scenario_results]
 
-    # ── Worst scenario bar chart ──────────────────────────────────────────────
-    names   = [s['name'].split(' (')[0][:30] for s in scenario_results]
-    impacts = [s['pct_impact'] for s in scenario_results]
-    colors  = ['#dc2626' if v < 0 else '#16a34a' for v in impacts]
+    # ── Downturn spike chart ──────────────────────────────────────────────────
+    _SPIKES = [
+        {'label': 'Dot-com Bust',          'date': '2002-10-09', 'pct': -49},
+        {'label': '2008 Financial Crisis', 'date': '2009-03-09', 'pct': -56},
+        {'label': 'COVID-19 Crash',        'date': '2020-03-23', 'pct': -34},
+        {'label': '2022 Bear Market',      'date': '2022-10-12', 'pct': -25},
+    ]
 
-    bar_fig = go.Figure(go.Bar(
-        x=impacts, y=names,
-        orientation='h',
-        marker_color=colors,
-        text=[f'{v:+.1f}%' for v in impacts],
-        textposition='outside',
-        textfont=dict(size=11),
-        hovertemplate='%{y}<br>Portfolio impact: <b>%{x:+.1f}%</b><extra></extra>',
-    ))
-    bar_fig.add_vline(x=0, line_color='#e0e0e0', line_width=1)
-    bar_fig.update_layout(
-        margin=dict(t=8, b=8, l=0, r=60),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+    crisis_fig = go.Figure()
+
+    _DAY_MS = 86_400_000  # ms per day
+
+    # Subtle dashed reference lines
+    for ref_y in [-20, -40, -60]:
+        crisis_fig.add_hline(
+            y=ref_y,
+            line=dict(color='rgba(209,213,219,0.6)', width=1, dash='dot'),
+        )
+
+    # Baseline at 0%
+    crisis_fig.add_hline(y=0, line=dict(color='#d1d5db', width=1.5))
+
+    for sp in _SPIKES:
+        # Semi-transparent fill column behind the spike for visual weight
+        crisis_fig.add_trace(go.Bar(
+            x=[sp['date']],
+            y=[sp['pct']],
+            marker=dict(
+                color='rgba(220,38,38,0.07)',
+                line=dict(width=0),
+            ),
+            width=_DAY_MS * 480,
+            showlegend=False,
+            hoverinfo='skip',
+        ))
+
+        # Vertical spike line
+        crisis_fig.add_trace(go.Scatter(
+            x=[sp['date'], sp['date']],
+            y=[0, sp['pct']],
+            mode='lines',
+            line=dict(color='#dc2626', width=2),
+            showlegend=False,
+            hovertemplate=(
+                f"<b>{sp['label']}</b><br>"
+                f"Peak-to-trough: <b>{sp['pct']}%</b>"
+                "<extra></extra>"
+            ),
+        ))
+
+        # Small horizontal cap at the trough
+        crisis_fig.add_trace(go.Scatter(
+            x=[sp['date']], y=[sp['pct']],
+            mode='markers',
+            marker=dict(color='#dc2626', size=7, symbol='line-ew',
+                        line=dict(color='#dc2626', width=2.5)),
+            showlegend=False,
+            hoverinfo='skip',
+        ))
+
+    crisis_fig.update_layout(
+        margin=dict(t=16, b=8, l=4, r=16),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
         showlegend=False,
-        xaxis=dict(showgrid=True, gridcolor='#f5f5f5', zeroline=False,
-                   tickfont=dict(size=10, color='#bbb'), ticksuffix='%'),
-        yaxis=dict(tickfont=dict(size=11, color='#555'), autorange='reversed'),
-        height=max(120, len(scenario_results) * 28 + 16),
+        bargap=0,
+        xaxis=dict(
+            showgrid=False, zeroline=False,
+            tickfont=dict(size=11, color='#9ca3af'),
+            tickformat='%Y',
+            type='date',
+            range=['1998-01-01', '2025-06-01'],
+            tickmode='linear',
+            dtick='M60',
+        ),
+        yaxis=dict(
+            showgrid=False, zeroline=False,
+            tickfont=dict(size=10, color='#9ca3af'),
+            ticksuffix='%',
+            range=[-75, 20],
+            tickvals=[-60, -40, -20, 0],
+        ),
+        height=320,
+        hovermode='closest',
+        annotations=(
+            # Crisis name labels above 0% line
+            [
+                dict(
+                    x=sp['date'], y=12,
+                    text=f"<b>{sp['label']}</b>",
+                    showarrow=False,
+                    font=dict(size=10, color='#6b7280'),
+                    xanchor='center',
+                    yanchor='bottom',
+                    align='center',
+                )
+                for sp in _SPIKES
+            ]
+            # Trough % labels below each spike, clear of the cap marker
+            + [
+                dict(
+                    x=sp['date'], y=sp['pct'] - 4,
+                    text=f"<b>{sp['pct']}%</b>",
+                    showarrow=False,
+                    font=dict(size=12, color='#dc2626'),
+                    xanchor='center',
+                    yanchor='top',
+                )
+                for sp in _SPIKES
+            ]
+        ),
     )
 
     return html.Div([
-        section_label("Historical Scenario Analysis"),
-        html.P("Estimated portfolio impact based on sector-level drawdowns from past crises. "
-               "Shocks are applied per sector — positions without sector data use the broad market drop.",
-               style={'fontSize': '14px', 'color': '#777', 'margin': '-8px 0 16px',
-                      'lineHeight': '1.6'}),
-        dcc.Graph(figure=bar_fig, config={'displayModeBar': False}),
-        html.Div(style={'marginTop': '17px'}),
-        html.Div(scenario_cards, style={
-            'display': 'grid',
-            'gridTemplateColumns': 'repeat(2, 1fr)',
-            'gap': '8px',
-        }),
+        section_label("Historical Bear Markets"),
+        html.P(
+            "S&P 500 peak-to-trough drawdown for each major bear market.",
+            style={'fontSize': '13px', 'color': '#9ca3af', 'margin': '-8px 0 4px', 'lineHeight': '1.6'},
+        ),
+        dcc.Graph(figure=crisis_fig, config={'displayModeBar': False}),
     ], style=CARD)
 
 
@@ -1779,28 +2072,31 @@ def _val_zone_bar(value: float, segments: list, display_max: float):
         'backgroundColor': '#111', 'borderRadius': '2px', 'zIndex': '10',
     })
 
-    # Zone labels below the bar, centred within each segment
-    label_spans = []
+    # Zone labels below the bar — flex cells mirror the colour bands so
+    # labels can never overlap.  Suppress text in cells narrower than 13 %.
+    label_cells = []
     prev = 0.0
     for label, seg_max, color in segments:
-        mid_pct = ((prev + seg_max) / 2) / display_max * 100
-        label_spans.append(html.Span(label, style={
-            'position': 'absolute',
-            'left': f'{mid_pct:.2f}%',
-            'transform': 'translateX(-50%)',
-            'fontSize': '10px',
-            'color': color,
-            'fontWeight': '600',
-            'whiteSpace': 'nowrap',
-            'letterSpacing': '0.01em',
-        }))
+        width_pct = (seg_max - prev) / display_max * 100
+        label_cells.append(html.Div(
+            label if width_pct >= 13 else None,
+            style={
+                'width': f'{width_pct:.2f}%',
+                'flexShrink': '0',
+                'textAlign': 'center',
+                'fontSize': '10px',
+                'color': color,
+                'fontWeight': '600',
+                'whiteSpace': 'nowrap',
+                'overflow': 'hidden',
+            },
+        ))
         prev = seg_max
 
-    labels_row = html.Div(label_spans, style={
-        'position': 'relative',
+    labels_row = html.Div(label_cells, style={
+        'display': 'flex',
         'height': '15px',
         'marginTop': '4px',
-        'overflow': 'visible',
     })
 
     return html.Div([

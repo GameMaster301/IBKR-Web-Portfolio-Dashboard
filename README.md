@@ -1,12 +1,36 @@
 # IBKR Portfolio Dashboard
 
-A real-time, private portfolio dashboard for Interactive Brokers — built with Python and Plotly Dash. Connects directly to TWS via the `ib_async` API. No third-party data providers for live prices, no delays, read-only.
+A real-time, private portfolio dashboard for Interactive Brokers — built with Python and Plotly Dash. Connects directly to **IB Gateway** via the `ib_async` API. No third-party data providers for live prices, no delays, read-only.
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat&logo=python&logoColor=white)
 ![Dash](https://img.shields.io/badge/Plotly_Dash-2.x-119DFF?style=flat&logo=plotly&logoColor=white)
 ![ib_async](https://img.shields.io/badge/ib__async-latest-orange?style=flat)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat&logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat)
+
+---
+
+## Download & Install
+
+> **Only requirement:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (free, ~2 min to install). IB Gateway or TWS must be running on your machine.
+
+### Windows — paste into PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/main/install.ps1 | iex
+```
+
+Creates a desktop shortcut. Double-click it any time to start.
+
+### Mac / Linux — paste into Terminal
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/main/install.sh | bash
+```
+
+### Prefer not to use a terminal?
+
+Download the **[latest release zip](https://github.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/releases/latest)**, extract it anywhere, and follow **SETUP.txt** inside. Then double-click `start.bat` (Windows) or run `./start.sh` (Mac/Linux).
 
 ---
 
@@ -17,78 +41,21 @@ A real-time, private portfolio dashboard for Interactive Brokers — built with 
 - **Allocation donut chart** — visual portfolio weights
 - **Live EUR/USD rate** — fetched directly from IBKR, not a third-party API
 - **Market Valuation** — Buffett Indicator (Wilshire 5000 / US GDP), S&P 500 trailing P/E, Shiller CAPE with 50-year chart; each metric colour-coded by valuation zone
-- **Market Intelligence** — correlation heatmap, sector & geography exposure, earnings calendar, historical scenario analysis, efficient frontier
+- **Market Intelligence** — correlation heatmap, sector & geography exposure, earnings calendar, historical scenario analysis, efficient frontier with your portfolio plotted and Sharpe ratio annotated
 - **Dividends tracker** — yield per position, projected annual income, upcoming payment schedule
-- **AI analysis** — Claude-powered portfolio review (requires `ANTHROPIC_API_KEY`)
+- **AI analysis** — built-in rule-based analysis with no setup; Claude upgrade available via `ANTHROPIC_API_KEY`
 - **PDF export** — one-click portfolio snapshot download
-- **Auto-reconnect** — exponential back-off with passive heartbeat; dashboard keeps working while TWS is restarting
+- **Auto-reconnect** — exponential back-off with passive heartbeat; dashboard keeps working while IB Gateway or TWS is restarting
 
 ---
 
-## Quickest start — Docker Hub (no code required)
-
-No Python, no git clone. You just need [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed.
-
-### 1 — Create two files anywhere on your machine
-
-**`docker-compose.yml`**
-```yaml
-services:
-  dashboard:
-    image: gamemaster301/ibkrdash:latest
-    container_name: ibkrdash
-    ports:
-      - "8050:8050"
-    environment:
-      IBKR_HOST: ${IBKR_HOST:-host.docker.internal}
-      IBKR_PORT: ${IBKR_PORT:-7497}
-      IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-10}
-      IBKR_READONLY: ${IBKR_READONLY:-true}
-      DASH_HOST: 0.0.0.0
-      DASH_PORT: 8050
-      OPEN_BROWSER: "0"
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    restart: unless-stopped
-    # Linux only — uncomment if host.docker.internal doesn't resolve:
-    # extra_hosts:
-    #   - "host.docker.internal:host-gateway"
-```
-
-**`.env`**
-```env
-IBKR_PORT=7497
-# ANTHROPIC_API_KEY=sk-ant-...   ← uncomment and fill in for AI analysis
-```
-
-### 2 — Start
-
-```bash
-docker compose up -d
-```
-
-Open **http://localhost:8050**. The image is pulled automatically on first run.
-
-### Run on every boot automatically
-
-In **Docker Desktop → Settings → General**, enable **"Start Docker Desktop when you log in"**.
-
-Combined with `restart: unless-stopped`, the dashboard will be live at `localhost:8050` automatically whenever your machine starts.
-
-### Update to the latest version
-
-```bash
-docker compose pull && docker compose up -d
-```
-
----
-
-## Quick start — local Python
+## For developers — run from source
 
 ### Requirements
 
 - Python 3.12+
 - Interactive Brokers account (paper or live)
-- TWS or IB Gateway running locally
+- **IB Gateway** or **TWS** running locally with API enabled
 
 ### Install
 
@@ -98,14 +65,46 @@ cd IBKR-TWS-Web-Portfolio-Dashboard
 pip install -r requirements.txt
 ```
 
-### TWS setup
+### Step 1 — Enable the API in IB Gateway or TWS
 
-1. Open TWS and log in
-2. **Edit → Global Configuration → API → Settings**
-3. Check **Enable ActiveX and Socket Clients**
-4. Set socket port to **7497** (paper) or **7496** (live)
-5. Optionally check **Read-Only API** — the dashboard never places orders
-6. Click OK and restart TWS
+The dashboard works with both. Pick whichever you already have running.
+
+---
+
+#### Option A — IB Gateway (recommended for dashboard use)
+
+[Download IB Gateway](https://www.interactivebrokers.com/en/trading/ibgateway-stable.php) — headless, ~100 MB RAM, designed for API connections.
+
+1. Open IB Gateway and log in
+2. **Configure → Settings → API → Settings**
+3. Tick **Enable ActiveX and Socket Clients**
+4. Set the socket port: **4002** for paper trading, **4001** for live
+5. Tick **Read-Only API** (the dashboard never places orders)
+6. Click **OK**
+
+Set `IBKR_PORT=4002` (paper) or `IBKR_PORT=4001` (live) when running the dashboard.
+
+---
+
+#### Option B — TWS (if you already have it open for manual trading)
+
+1. In TWS: **Edit → Global Configuration → API → Settings**
+2. Tick **Enable ActiveX and Socket Clients**
+3. Set the socket port: **7497** for paper trading, **7496** for live
+4. Tick **Read-Only API**
+5. Click **OK** and restart TWS if prompted
+
+Set `IBKR_PORT=7497` (paper) or `IBKR_PORT=7496` (live) when running the dashboard.
+
+---
+
+| | IB Gateway | TWS |
+|---|---|---|
+| Paper port | **4002** | **7497** |
+| Live port | **4001** | **7496** |
+| RAM usage | ~100 MB | ~1 GB |
+| Needs a GUI | No | Yes |
+| Best for | Always-on API dashboards | Active manual trading |
 
 ### Run
 
@@ -179,19 +178,34 @@ docker compose down
 
 ---
 
-## Publishing a new image (maintainers)
+## Publishing (maintainers)
 
-Every push to `main` automatically builds and pushes a new `latest` image to Docker Hub via GitHub Actions. To enable this on a fork:
+### Continuous Docker builds
 
-1. Go to **GitHub → repository → Settings → Secrets and variables → Actions**
-2. Add two repository secrets:
+Every push to `main` automatically builds and pushes `:latest` to Docker Hub via GitHub Actions.
+
+### Creating a release
+
+Tag a commit to trigger a GitHub Release with the user-facing setup zip attached automatically:
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+The release workflow (`.github/workflows/release.yml`) will:
+1. Build and push the Docker image tagged `:latest` and `:v1.2.0`
+2. Package `ibkrdash-setup.zip` (contains `docker-compose.yml`, `.env`, all start/stop/update scripts, and `SETUP.txt`)
+3. Create a GitHub Release with the zip and install instructions
+
+### Required GitHub repository secrets
 
 | Secret | Value |
 |---|---|
-| `DOCKERHUB_USERNAME` | Your Docker Hub username |
+| `DOCKERHUB_USERNAME` | Docker Hub username |
 | `DOCKERHUB_TOKEN` | A Docker Hub [access token](https://app.docker.com/settings/personal-access-tokens) (read/write) |
 
-After that, every merge to `main` triggers a new build for `linux/amd64` and `linux/arm64` (Apple Silicon).
+> **Note:** pushing to `.github/workflows/` requires a GitHub Personal Access Token with the `workflow` scope.
 
 ---
 
@@ -201,8 +215,8 @@ All settings can be set via `config.yaml` **or** environment variables (env wins
 
 | Env var | Default | Description |
 |---|---|---|
-| `IBKR_HOST` | `127.0.0.1` | TWS / IB Gateway host |
-| `IBKR_PORT` | `7497` | API port (7497 paper, 7496 live) |
+| `IBKR_HOST` | `127.0.0.1` | IB Gateway / TWS host |
+| `IBKR_PORT` | `4002` | API port — IB Gateway: 4002 paper / 4001 live; TWS: 7497 paper / 7496 live |
 | `IBKR_CLIENT_ID` | `1` | Must be unique per simultaneous API client |
 | `IBKR_READONLY` | `true` | Read-only API (recommended) |
 | `IBKR_RECONNECT_DELAY` | `5` | Base reconnect delay in seconds (exponential back-off) |
@@ -211,22 +225,24 @@ All settings can be set via `config.yaml` **or** environment variables (env wins
 | `REFRESH_INTERVAL` | `60` | Auto-refresh interval in seconds |
 | `OPEN_BROWSER` | `1` | Set to `0` to skip browser launch |
 | `CONFIG_PATH` | `config.yaml` | Path to YAML config file |
-| `ANTHROPIC_API_KEY` | _(none)_ | Required for AI analysis |
+| `ANTHROPIC_API_KEY` | _(none)_ | Optional — enables Claude AI analysis (built-in analysis works without it) |
 
 ---
 
 ## Troubleshooting
 
-### Dashboard shows "Not connected to TWS"
+### Dashboard shows "Not connected"
 
-- Make sure TWS is open and logged in.
-- In TWS: **Edit → Global Configuration → API → Settings** — confirm the port matches `IBKR_PORT`.
+- Make sure **IB Gateway** is open and logged in.
+- In IB Gateway: **Configure → Settings → API → Settings** — confirm the port matches `IBKR_PORT` (default `4002` for paper, `4001` for live).
 - Check **Enable ActiveX and Socket Clients** is ticked.
 - If running in Docker on Linux, set `IBKR_HOST` to your machine's LAN IP, not `host.docker.internal`.
 
-### Docker: "Connection refused" to TWS
+> **Using TWS instead?** The same steps apply — just use port **7497** (paper) or **7496** (live) and navigate via **Edit → Global Configuration → API → Settings**.
 
-1. Confirm TWS is running on the **host** machine (not inside Docker).
+### Docker: "Connection refused" to IB Gateway
+
+1. Confirm IB Gateway is running on the **host** machine (not inside Docker).
 2. On macOS/Windows Docker Desktop, `host.docker.internal` resolves automatically.
 3. On Linux, add to `docker-compose.yml`:
    ```yaml
@@ -237,7 +253,7 @@ All settings can be set via `config.yaml` **or** environment variables (env wins
 
 ### "Client ID already in use"
 
-Each IB API client needs a unique `IBKR_CLIENT_ID`. If TWS says the ID is taken, change it in `.env` (e.g. `IBKR_CLIENT_ID=10`).
+Each IB API client needs a unique `IBKR_CLIENT_ID`. If IB Gateway or TWS reports the ID is taken, change it in `.env` (e.g. `IBKR_CLIENT_ID=10`).
 
 ### Market Intelligence sections show yellow "temporarily unavailable"
 
@@ -246,9 +262,9 @@ This means a yfinance network call failed. It will retry automatically on the ne
 docker exec -it ibkrdash python -c "import yfinance as yf; print(yf.Ticker('AAPL').info['regularMarketPrice'])"
 ```
 
-### AI analysis button does nothing / shows error
+### AI analysis returns generic insights instead of Claude responses
 
-Ensure `ANTHROPIC_API_KEY` is set in your environment or `.env` file. The key never leaves your machine.
+The built-in rule-based analysis runs with no setup. To upgrade to Claude, set `ANTHROPIC_API_KEY` in your environment or `.env` file — the key never leaves your machine.
 
 ---
 
@@ -257,20 +273,31 @@ Ensure `ANTHROPIC_API_KEY` is set in your environment or `.env` file. The key ne
 ```
 ├── main.py               Entry point — starts IBKR thread and Dash server
 ├── config.py             Config loader (YAML + env var overrides)
-├── ibkr_client.py        Persistent TWS connection with exponential back-off & heartbeat
+├── ibkr_client.py        Persistent IB Gateway / TWS connection with exponential back-off & heartbeat
 ├── dashboard.py          Dash layout, all callbacks, graceful error handling
 ├── data_processor.py     Position calculations and enrichment
 ├── analytics.py          Dividend data helpers (yfinance)
 ├── market_intel.py       Correlation, sector/geo, earnings, efficient frontier (yfinance)
 ├── market_valuation.py   Macro indicators — Buffett, S&P 500 P/E, Shiller CAPE
 ├── ai_analyst.py         Claude AI portfolio analysis
+├── assets/
+│   └── custom.css        Dashboard CSS overrides
 ├── config.yaml           Default configuration
 ├── requirements.txt
 ├── Dockerfile
 ├── docker-compose.yml
+│
+├── install.ps1           Windows one-liner installer (creates desktop shortcut)
+├── install.sh            Mac / Linux one-liner installer
+├── start.bat / start.sh  Start the dashboard and open browser
+├── stop.bat  / stop.sh   Stop the dashboard
+├── update.bat/ update.sh Pull latest image and restart
+├── SETUP.txt             Plain-English setup guide (included in release zip)
+│
 ├── .github/
 │   └── workflows/
-│       └── docker-publish.yml   CI/CD — builds & pushes image on every push to main
+│       ├── docker-publish.yml   Builds & pushes :latest on every push to main
+│       └── release.yml          Builds image + creates GitHub Release zip on git tag
 ├── .dockerignore
 └── .env.example
 ```
@@ -294,7 +321,7 @@ Ensure `ANTHROPIC_API_KEY` is set in your environment or `.env` file. The key ne
 ## Notes
 
 - The dashboard connects in **read-only mode** — it cannot place, modify, or cancel orders.
-- Paper trading uses port `7497`; live accounts use `7496`.
+- IB Gateway ports: `4002` (paper) / `4001` (live). TWS ports: `7497` (paper) / `7496` (live).
 - yfinance data (market intelligence, valuation indicators) is cached in memory for 4 hours; IBKR market data refreshes every 60 seconds.
 
 ---

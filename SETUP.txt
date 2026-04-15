@@ -1,0 +1,140 @@
+╔══════════════════════════════════════════════════════════════════╗
+║          IBKR Portfolio Dashboard — Setup Guide                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+A real-time portfolio dashboard that connects directly to your
+Interactive Brokers account. No data subscriptions. No delays.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1 — Install Docker Desktop  (one-time, ~2 min)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Download and install Docker Desktop:
+  https://www.docker.com/products/docker-desktop/
+
+After installing, open Docker Desktop and wait until the whale icon
+in your taskbar stops animating — that means it's ready.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2 — Enable the API in IB Gateway or TWS  (one-time)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You only need to do this once — IB Gateway remembers the setting.
+
+  Using IB Gateway (recommended):
+    1. Open IB Gateway and log in
+    2. Click  Configure → Settings → API → Settings
+    3. Tick   "Enable ActiveX and Socket Clients"
+    4. Port:  4002  (paper trading)  or  4001  (live trading)
+    5. Tick   "Read-Only API"
+    6. Click  OK
+
+  Using TWS:
+    1. Open TWS and log in
+    2. Click  Edit → Global Configuration → API → Settings
+    3. Tick   "Enable ActiveX and Socket Clients"
+    4. Port:  7497  (paper trading)  or  7496  (live trading)
+    5. Tick   "Read-Only API"
+    6. Click  OK
+
+  Port reference:
+  ┌────────────────────┬───────────┬────────────┐
+  │                    │  Paper    │  Live      │
+  ├────────────────────┼───────────┼────────────┤
+  │ IB Gateway         │  4002     │  4001      │
+  │ TWS                │  7497     │  7496      │
+  └────────────────────┴───────────┴────────────┘
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3 — Edit .env  (one-time)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Open the file called  .env  in Notepad (or any text editor).
+
+Change IBKR_PORT to match your setup from Step 2:
+  IBKR_PORT=4002   ← IB Gateway paper  (this is the default)
+  IBKR_PORT=4001   ← IB Gateway live
+  IBKR_PORT=7497   ← TWS paper
+  IBKR_PORT=7496   ← TWS live
+
+Save and close the file.
+
+  NOTE: On Windows, .env files may be hidden. If you can't see it:
+    Open File Explorer → View → tick "Hidden items"
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 4 — Start the dashboard
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Windows:     Double-click   start.bat
+  Mac / Linux: Run            ./start.sh
+
+The first launch downloads the app image (~300 MB) — this takes
+1–3 minutes depending on your connection. Subsequent starts are
+near-instant.
+
+Your browser will open automatically at http://localhost:8050
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DAILY USE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Start the dashboard:   start.bat  /  ./start.sh
+  Stop the dashboard:    stop.bat   /  ./stop.sh
+  Update to latest:      update.bat /  ./update.sh
+
+The dashboard runs silently in the background once started.
+You can close the terminal/command window after it opens in your browser.
+
+To start automatically on every boot:
+  In Docker Desktop → Settings → General
+  Tick  "Start Docker Desktop when you log in"
+  The dashboard will then start automatically with Docker.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OPTIONAL — Enable AI Analysis
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The dashboard includes built-in portfolio analysis that works
+without any setup. To upgrade to Claude AI analysis:
+
+  1. Get a free API key at https://console.anthropic.com/
+  2. Open .env and uncomment this line:
+       # ANTHROPIC_API_KEY=sk-ant-...
+     Change it to:
+       ANTHROPIC_API_KEY=sk-ant-YOUR-KEY-HERE
+  3. Run update.bat (or ./update.sh) to restart with the new key
+
+Your API key stays on your machine and is never shared.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Dashboard shows "Not connected"
+  → Make sure IB Gateway (or TWS) is open and logged in
+  → Confirm the port in .env matches IB Gateway's port setting
+  → The dashboard retries automatically every 15 seconds
+
+"Docker is not running" error on start
+  → Open Docker Desktop and wait for the whale icon to stop animating
+  → Then try start.bat again
+
+"Client ID already in use"
+  → Open .env and change  IBKR_CLIENT_ID=10  to any other number
+  → Run update.bat to restart
+
+Market data sections show "temporarily unavailable"
+  → This is a temporary network issue — it retries automatically
+  → If it persists, check your internet connection
+
+More help: https://github.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

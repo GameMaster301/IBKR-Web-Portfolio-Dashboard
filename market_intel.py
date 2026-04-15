@@ -28,6 +28,69 @@ from concurrent.futures import ThreadPoolExecutor
 
 log = logging.getLogger(__name__)
 
+# ── Yahoo Finance symbol resolution ───────────────────────────────────────────
+# European tickers listed on non-US exchanges are not found by their plain
+# IBKR symbol on Yahoo Finance — they need an exchange suffix (e.g. SPPE→SPPE.DE).
+# These helpers are used by every function that calls yfinance so that a single
+# European holding never silently breaks an entire section.
+
+_EU_SUFFIXES = ['.DE', '.L', '.PA', '.AS', '.MI', '.SW', '.BR', '.LS', '.MC']
+
+# Per-session cache: plain IBKR symbol → resolved Yahoo Finance symbol string.
+# Avoids redundant .info network calls on every 4-hour cache refresh.
+_YF_SYM_CACHE: dict = {}
+
+
+def _yf_info(sym: str) -> dict:
+    """
+    Return yfinance .info dict for sym, trying EU exchange suffixes on failure.
+    Result is NOT separately cached here — the caller's _CACHE handles that.
+    """
+    import yfinance as yf
+    try:
+        info = yf.Ticker(sym).info
+        if info.get('quoteType'):
+            return info
+    except Exception:
+        pass
+    for suffix in _EU_SUFFIXES:
+        try:
+            alt = yf.Ticker(sym + suffix).info
+            if alt.get('quoteType'):
+                log.debug('[market_intel] %s resolved via %s%s', sym, sym, suffix)
+                return alt
+        except Exception:
+            continue
+    return {}
+
+
+def _resolve_yf_sym(sym: str) -> str:
+    """
+    Return the Yahoo Finance symbol string to use for a given IBKR ticker.
+    Uses _YF_SYM_CACHE so the resolution network call only happens once per session.
+    """
+    if sym in _YF_SYM_CACHE:
+        return _YF_SYM_CACHE[sym]
+    import yfinance as yf
+    resolved = sym
+    try:
+        if yf.Ticker(sym).info.get('quoteType'):
+            _YF_SYM_CACHE[sym] = sym
+            return sym
+    except Exception:
+        pass
+    for suffix in _EU_SUFFIXES:
+        try:
+            if yf.Ticker(sym + suffix).info.get('quoteType'):
+                resolved = sym + suffix
+                log.debug('[market_intel] %s resolved to %s', sym, resolved)
+                break
+        except Exception:
+            continue
+    _YF_SYM_CACHE[sym] = resolved
+    return resolved
+
+
 # ── In-process cache ───────────────────────────────────────────────────────────
 _CACHE: dict = {}
 _TTL = 3600 * 4   # 4 hours
@@ -88,19 +151,43 @@ def get_price_history(tickers: list, period: str = '90d') -> dict:
 
             raw = _fetch_with_retry(_download)
             if raw.empty:
-                return result
-
-            if len(tickers) == 1:
+                closes = pd.DataFrame()
+            elif len(tickers) == 1:
                 closes = pd.DataFrame({tickers[0]: raw['Close'].squeeze()})
             else:
                 closes = raw['Close']
 
-            closes = closes.dropna(how='all')
+            closes = closes.dropna(how='all') if not closes.empty else closes
+
+            # For any ticker that returned no data, retry with EU exchange suffixes.
+            # This handles European tickers like SPPE (XETRA) that Yahoo Finance
+            # only knows as SPPE.DE — the bulk download silently drops them.
+            missing = [s for s in tickers
+                       if s not in closes.columns
+                       or closes[s].dropna().empty]
+            alt_series: dict = {}
+            for sym in missing:
+                for suffix in _EU_SUFFIXES:
+                    try:
+                        alt = yf.download(sym + suffix, period=period,
+                                          auto_adjust=True, progress=False)
+                        if not alt.empty:
+                            s_data = alt['Close'].squeeze().dropna()
+                            if len(s_data) >= 10:
+                                alt_series[sym] = s_data
+                                log.debug('[market_intel] %s resolved via %s%s for prices',
+                                          sym, sym, suffix)
+                                break
+                    except Exception:
+                        continue
 
             for sym in tickers:
-                if sym not in closes.columns:
+                if sym in alt_series:
+                    s = alt_series[sym]
+                elif sym in closes.columns:
+                    s = closes[sym].dropna()
+                else:
                     continue
-                s = closes[sym].dropna()
                 if len(s) < 10:
                     continue
                 r = s.pct_change().dropna()
@@ -152,30 +239,6 @@ def get_sector_geo(tickers: list) -> dict:
     import yfinance as yf
 
     key = ('sector_geo', tuple(sorted(tickers)))
-
-    # Yahoo Finance suffixes to try for European/non-US tickers that 404 plain.
-    # Ordered by likelihood: XETRA, London, Euronext Paris/Amsterdam, Milan, Swiss.
-    _EU_SUFFIXES = ['.DE', '.L', '.PA', '.AS', '.MI', '.SW', '.BR', '.LS', '.MC']
-
-    def _yf_info(sym: str) -> dict:
-        """Try sym as-is; if it 404s or returns no quoteType, retry with EU suffixes."""
-        try:
-            info = yf.Ticker(sym).info
-            if info.get('quoteType'):
-                return info
-        except Exception:
-            pass
-        # Plain lookup failed or returned empty — walk through exchange suffixes
-        for suffix in _EU_SUFFIXES:
-            try:
-                alt = yf.Ticker(sym + suffix).info
-                if alt.get('quoteType'):
-                    log.debug('[market_intel] %s resolved via %s%s', sym, sym, suffix)
-                    return alt
-            except Exception:
-                continue
-        # Give up — return empty dict so caller falls back to 'Unknown'
-        return {}
 
     def fetch():
         def one(sym):
@@ -245,8 +308,10 @@ def get_earnings_data(tickers: list) -> dict:
         def one(sym):
             out = {'next_date': None, 'avg_1d_move': None, 'last_1d_moves': []}
             try:
-                t    = yf.Ticker(sym)
-                info = _fetch_with_retry(lambda: t.info, retries=2)
+                # Resolve to the correct Yahoo Finance symbol (e.g. SPPE → SPPE.DE)
+                yf_sym = _resolve_yf_sym(sym)
+                t      = yf.Ticker(yf_sym)
+                info   = _fetch_with_retry(lambda: t.info, retries=2)
 
                 # Next earnings date
                 for field in ('earningsTimestamp', 'earningsTimestampStart'):

@@ -1,0 +1,110 @@
+name: Release
+
+# Triggered when you push a version tag, e.g.:
+#   git tag v1.0.0 && git push origin v1.0.0
+#
+# This job:
+#   1. Builds the multi-platform Docker image and pushes it to Docker Hub
+#      (tagged with both :latest and :v1.0.0)
+#   2. Packages the user-facing zip (ibkrdash-setup.zip) containing
+#      docker-compose.yml, .env, and all start/stop/update scripts
+#   3. Creates a GitHub Release with the zip attached and install instructions
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # ── 1. Build & push Docker image ────────────────────────────────────────
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/ibkrdash:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/ibkrdash:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── 2. Build zip + create GitHub Release ────────────────────────────────
+  release:
+    runs-on: ubuntu-latest
+    needs: docker
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ibkrdash-setup.zip
+        run: |
+          mkdir -p pkg/ibkrdash
+          cp docker-compose.yml  pkg/ibkrdash/
+          cp .env.example        pkg/ibkrdash/.env
+          cp start.bat           pkg/ibkrdash/
+          cp stop.bat            pkg/ibkrdash/
+          cp update.bat          pkg/ibkrdash/
+          cp start.sh            pkg/ibkrdash/
+          cp stop.sh             pkg/ibkrdash/
+          cp update.sh           pkg/ibkrdash/
+          cp SETUP.txt           pkg/ibkrdash/
+          chmod +x pkg/ibkrdash/*.sh
+          cd pkg && zip -r ../ibkrdash-setup.zip ibkrdash/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ibkrdash-setup.zip
+          generate_release_notes: true
+          body: |
+            ## IBKR Portfolio Dashboard ${{ github.ref_name }}
+
+            Real-time portfolio dashboard for Interactive Brokers — no code required.
+
+            ---
+
+            ### One-command install
+
+            **Windows** — paste into PowerShell:
+            ```powershell
+            irm https://raw.githubusercontent.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/main/install.ps1 | iex
+            ```
+
+            **Mac / Linux** — paste into Terminal:
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/main/install.sh | bash
+            ```
+
+            ---
+
+            ### Manual install (no terminal)
+
+            1. Download **ibkrdash-setup.zip** below and extract it anywhere
+            2. Open **SETUP.txt** inside for step-by-step instructions
+            3. Double-click **start.bat** (Windows) or run **./start.sh** (Mac/Linux)
+
+            ---
+
+            ### Requirements
+            - [Docker Desktop](https://www.docker.com/products/docker-desktop/) — free, one-time install
+            - IB Gateway or TWS running with API enabled (instructions in SETUP.txt)

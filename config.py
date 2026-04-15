@@ -22,7 +22,7 @@ _CONFIG_PATH = os.environ.get(
 _DEFAULTS: dict = {
     'ibkr': {
         'host':                   '127.0.0.1',
-        'port':                   7497,
+        'port':                   4002,
         'client_id':              1,
         'readonly':               True,
         'reconnect_delay_seconds': 5,   # base delay; actual delay is exponential

@@ -8,10 +8,18 @@ Design
 - Passive heartbeat: every `heartbeat_interval` seconds a lightweight
   reqCurrentTime() is sent so the OS TCP layer cannot silently drop the
   connection without us noticing.
-- All external-facing calls degrade gracefully: if TWS is unreachable the
+- All external-facing calls degrade gracefully: if IB Gateway is unreachable the
   dashboard shows a "disconnected" banner and keeps displaying cached data.
 - fetch_all_data() is non-blocking: a threading.Lock prevents overlapping
   fetches without ever blocking the Dash refresh thread.
+
+IB Gateway ports (recommended over TWS for API-only use):
+  4002 — paper trading
+  4001 — live trading
+
+TWS ports (if you prefer TWS):
+  7497 — paper trading
+  7496 — live trading
 """
 
 import asyncio
@@ -36,7 +44,7 @@ class _IBKRConnection:
 
         # Config (set by start())
         self._host               = '127.0.0.1'
-        self._port               = 7497
+        self._port               = 4002
         self._client_id          = 1
         self._readonly           = True
         self._reconnect_delay    = _BASE_BACKOFF
@@ -52,7 +60,7 @@ class _IBKRConnection:
     def status(self) -> str:
         return 'connected' if self.is_connected else 'disconnected'
 
-    def start(self, host='127.0.0.1', port=7497, client_id=1,
+    def start(self, host='127.0.0.1', port=4002, client_id=1,
               readonly=True, reconnect_delay=_BASE_BACKOFF,
               heartbeat_interval=30):
         self._host               = host
@@ -101,7 +109,7 @@ class _IBKRConnection:
             ib.disconnectedEvent += _on_disconnect
 
             try:
-                log.info("Connecting to TWS at %s:%d (attempt %d) …",
+                log.info("Connecting to IB Gateway at %s:%d (attempt %d) …",
                          self._host, self._port, self._conn_attempt + 1)
                 await ib.connectAsync(
                     self._host, self._port,
@@ -112,11 +120,11 @@ class _IBKRConnection:
                 self._ib           = ib
                 self._connected    = True
                 self._conn_attempt = 0   # reset back-off counter on success
-                log.info("Connected to TWS ✓")
+                log.info("Connected to IB Gateway ✓")
 
                 # Stay connected; heartbeat until disconnected
                 await self._heartbeat_loop(ib, disc_event)
-                log.warning("Disconnected from TWS")
+                log.warning("Disconnected from IB Gateway")
 
             except asyncio.CancelledError:
                 raise
@@ -358,7 +366,7 @@ class _IBKRConnection:
 _conn = _IBKRConnection()
 
 
-def start_connection(host='127.0.0.1', port=7497, client_id=1,
+def start_connection(host='127.0.0.1', port=4002, client_id=1,
                      readonly=True, reconnect_delay=_BASE_BACKOFF,
                      heartbeat_interval=30):
     """Call once at startup to launch the background IB thread."""

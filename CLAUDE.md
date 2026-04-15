@@ -16,7 +16,7 @@ docker compose logs -f dashboard
 
 There are no tests or linting commands configured. The app is validated by running it.
 
-**TWS prerequisite:** Interactive Brokers TWS or IB Gateway must be running with API enabled (Edit → Global Configuration → API → Settings → Enable ActiveX and Socket Clients, port 7497 for paper / 7496 for live).
+**IB Gateway prerequisite:** IB Gateway must be running with API enabled (Configure → Settings → API → Settings → Enable ActiveX and Socket Clients). Default port is **4002** (paper) or **4001** (live). TWS also works — use port 7497 (paper) or 7496 (live) and update `IBKR_PORT` accordingly.
 
 ## Architecture
 
@@ -63,7 +63,7 @@ dcc.Interval('refresh-interval') ──► populate_valuation_data()
 | `analytics.py` | `get_dividend_data_yf()` — yfinance dividend fallback with 4h cache and parallel fetching |
 | `market_intel.py` | yfinance-backed: price history, correlation matrix, sector/geo, earnings, efficient frontier — all 4h cached |
 | `market_valuation.py` | Macro indicators: Buffett (Wilshire/World Bank), S&P 500 P/E (multpl.com), Shiller CAPE (multpl.com) — 4h cached |
-| `ai_analyst.py` | Calls Claude API (`claude-sonnet-4-20250514`) with a portfolio snapshot prompt; slated for replacement |
+| `ai_analyst.py` | Dual-mode AI: rule-based analysis/chat (no API key needed) with automatic upgrade to `claude-sonnet-4-6` when `ANTHROPIC_API_KEY` is set. Public entry points: `analyse_portfolio()` and `chat_portfolio()`. |
 | `config.py` | Merges `config.yaml` defaults → env var overrides, exposes `cfg` dict |
 
 ### Key Dash patterns used
@@ -87,18 +87,21 @@ All CSS customisation lives in `assets/custom.css`. Dash auto-serves everything 
 
 ### Configuration priority
 
-`config.yaml` defaults → env vars win. Key env vars: `IBKR_HOST`, `IBKR_PORT`, `IBKR_CLIENT_ID`, `IBKR_READONLY`, `DASH_PORT`, `REFRESH_INTERVAL`, `ANTHROPIC_API_KEY`. Docker sets `DASH_HOST=0.0.0.0` and `OPEN_BROWSER=0` automatically.
+`config.yaml` defaults → env vars win. Key env vars: `IBKR_HOST`, `IBKR_PORT`, `IBKR_CLIENT_ID`, `IBKR_READONLY`, `IBKR_RECONNECT_DELAY`, `DASH_HOST`, `DASH_PORT`, `REFRESH_INTERVAL`, `EURUSD_FALLBACK`, `ANTHROPIC_API_KEY`. `CONFIG_PATH` overrides the default `config.yaml` location (useful for Docker volume mounts). Docker sets `DASH_HOST=0.0.0.0` and `OPEN_BROWSER=0` automatically.
 
 ### Adding a new dashboard section
 
 1. Add a `html.Div(id='my-section')` to the layout in `dashboard.py`.
 2. Write a `@app.callback(Output('my-section', 'children'), Input('portfolio-data', 'data'))` callback.
-3. If it needs yfinance data, add it to `populate_market_intel` and read from `market-intel-data` store instead of fetching directly.
-4. If it needs new IBKR data, add the fetch to `_do_fetch()` in `ibkr_client.py` and include it in the returned dict.
+3. Use `section_label('Title')` for the section header and `make_table(headers, rows)` for any tabular data — these helpers are defined near the top of `dashboard.py` and used by every existing section.
+4. If it needs yfinance data, add it to `populate_market_intel` and read from `market-intel-data` store instead of fetching directly.
+5. If it needs new IBKR data, add the fetch to `_do_fetch()` in `ibkr_client.py` and include it in the returned dict.
 
 ## CI / Docker Hub publishing
 
-Every push to `main` triggers `.github/workflows/docker-publish.yml`, which builds a multi-platform image (`linux/amd64` + `linux/arm64`) and pushes it to Docker Hub as `gamemaster301/ibkrdash:latest`.
+**On every push to `main`:** `.github/workflows/docker-publish.yml` builds a multi-platform image (`linux/amd64` + `linux/arm64`) and pushes it to Docker Hub as `gamemaster301/ibkrdash:latest`.
+
+**On a version tag** (e.g. `git tag v1.2.0 && git push origin v1.2.0`): `.github/workflows/release.yml` does the same Docker build (also tags `:v1.2.0`) **and** creates a GitHub Release with `ibkrdash-setup.zip` attached. The zip contains `docker-compose.yml`, `.env`, all start/stop/update scripts, and `SETUP.txt`.
 
 **Required GitHub repository secrets:**
 
