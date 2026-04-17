@@ -17,9 +17,9 @@ from data_processor import process_positions, get_summary
 from analytics import get_dividend_data_yf
 from ai_analyst import analyse_portfolio, chat_portfolio, analyse_position
 from market_intel import (get_sector_geo,
-                           get_earnings_data, compute_efficient_frontier)
+                           get_earnings_data)
 from market_valuation import (get_buffett_indicator, get_sp500_pe,
-                               get_shiller_cape,
+                               get_shiller_cape, get_treasury_yield,
                                buffett_zone, pe_zone, cape_zone)
 
 log = logging.getLogger(__name__)
@@ -146,7 +146,7 @@ app.layout = html.Div([
             'textTransform': 'uppercase', 'letterSpacing': '0.07em', 'fontWeight': '600',
         }),
         html.P("Sector & geography · Earnings · Dividends · "
-               "Historical scenarios · Efficient frontier",
+               "Historical scenarios",
                style={'fontSize': '15px', 'color': '#888', 'margin': '0'}),
     ], style={
         'marginTop': '40px', 'paddingTop': '32px',
@@ -167,17 +167,6 @@ app.layout = html.Div([
         'borderTop': '0.5px solid #f0f0f0',
     }),
 
-    # Historical Scenarios
-    html.Div(id='scenarios-section', style={
-        'marginTop': '32px', 'paddingTop': '28px',
-        'borderTop': '0.5px solid #f0f0f0',
-    }),
-
-    # Efficient Frontier
-    html.Div(id='frontier-section', style={
-        'marginTop': '32px', 'paddingTop': '28px',
-        'borderTop': '0.5px solid #f0f0f0',
-    }),
 
     # Market Valuation (Buffett / S&P PE / Shiller CAPE)
     html.Div(id='market-valuation-section', style={
@@ -191,37 +180,37 @@ app.layout = html.Div([
         html.Div([
             html.Div([
                 section_label("AI Analysis"),
-                html.Span("Portfolio insights and Q&A — works instantly, no setup required.",
+                html.Span("Click a chip or type a question below.",
                           style={'fontSize': '14px', 'color': '#888',
                                  'marginTop': '-12px', 'display': 'block',
                                  'marginBottom': '6px', 'lineHeight': '1.5',
                                  'maxWidth': '480px'}),
                 html.Span(
                     "Powered by Claude" if os.environ.get('ANTHROPIC_API_KEY')
-                    else "Built-in analysis · set ANTHROPIC_API_KEY to upgrade to Claude",
+                    else "Built-in analysis · set ANTHROPIC_API_KEY for Claude AI",
                     style={'fontSize': '13px', 'color': '#bbb',
                            'display': 'block', 'marginBottom': '17px'},
                 ),
             ]),
-            html.Button("✦ Analyse Portfolio", id='ai-analyse-btn', n_clicks=0, style={
-                'background': '#378ADD', 'border': 'none', 'borderRadius': '8px',
-                'padding': '8px 20px', 'fontSize': '15px', 'cursor': 'pointer',
-                'color': '#fff', 'fontFamily': 'inherit', 'fontWeight': '500',
-                'letterSpacing': '0.02em', 'whiteSpace': 'nowrap',
+            html.Button("Clear chat", id='chat-clear-btn', n_clicks=0, style={
+                'background': 'none', 'border': '1px solid #e8e8e8',
+                'borderRadius': '8px', 'padding': '6px 14px',
+                'fontSize': '13px', 'cursor': 'pointer', 'color': '#aaa',
+                'fontFamily': 'inherit',
             }),
         ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-start'}),
 
-        # Analysis output
-        html.Div(id='ai-analysis-output'),
-
-        # Divider
-        html.Hr(style={'border': 'none', 'borderTop': '0.5px solid #f0f0f0',
-                       'margin': '24px 0 18px'}),
-
-        # Quick-action chips
+        # Quick-action chips — "Analyse Portfolio" is the primary action
         html.Div([
-            html.Span("Ask:", style={'fontSize': '13px', 'color': '#aaa',
-                                     'marginRight': '10px', 'lineHeight': '32px'}),
+            html.Button("✦ Analyse Portfolio",
+                        id={'type': 'chip-btn', 'index': '__analyse__'},
+                        n_clicks=0, style={
+                            'background': '#378ADD', 'border': 'none',
+                            'borderRadius': '16px', 'padding': '5px 16px',
+                            'fontSize': '13px', 'cursor': 'pointer', 'color': '#fff',
+                            'fontFamily': 'inherit', 'fontWeight': '500',
+                            'marginRight': '8px', 'marginBottom': '8px',
+                        }),
             *[html.Button(label, id={'type': 'chip-btn', 'index': question},
                           n_clicks=0, style={
                               'background': '#f5f5f5', 'border': '1px solid #e8e8e8',
@@ -242,14 +231,18 @@ app.layout = html.Div([
               ]
             ],
         ], style={'display': 'flex', 'flexWrap': 'wrap', 'alignItems': 'center',
-                  'marginBottom': '16px'}),
+                  'marginBottom': '14px'}),
 
-        # Chat thread
-        html.Div(id='chat-thread', style={
-            'maxHeight': '320px', 'overflowY': 'auto',
-            'display': 'flex', 'flexDirection': 'column', 'gap': '10px',
-            'marginBottom': '14px',
-        }),
+        # Chat thread — wrapped in Loading so a spinner appears during AI calls
+        dcc.Loading(
+            html.Div(id='chat-thread', style={
+                'maxHeight': '380px', 'overflowY': 'auto',
+                'display': 'flex', 'flexDirection': 'column', 'gap': '10px',
+                'marginBottom': '14px',
+            }),
+            type='dot', color='#378ADD',
+            style={'minHeight': '20px'},
+        ),
 
         # Chat input row
         html.Div([
@@ -265,7 +258,7 @@ app.layout = html.Div([
                     'outline': 'none', 'color': '#111',
                 },
             ),
-            html.Button("Send →", id='chat-send-btn', n_clicks=0, style={
+            html.Button("Send", id='chat-send-btn', n_clicks=0, style={
                 'background': '#111', 'border': 'none', 'borderRadius': '8px',
                 'padding': '9px 18px', 'fontSize': '14px', 'cursor': 'pointer',
                 'color': '#fff', 'fontFamily': 'inherit', 'marginLeft': '8px',
@@ -1272,7 +1265,7 @@ def populate_market_intel(data):
         return no_update
 
     weights = [p.get('allocation_pct', 0) for p in data['positions']]
-    result  = {'tickers': tickers, 'sector_geo': {}, 'earnings': {}, 'frontier': None}
+    result  = {'tickers': tickers, 'sector_geo': {}, 'earnings': {}}
 
     def _fetch_sector():
         return 'sector_geo', get_sector_geo(tickers)
@@ -1280,17 +1273,10 @@ def populate_market_intel(data):
     def _fetch_earnings():
         return 'earnings', get_earnings_data(tickers)
 
-    def _fetch_frontier():
-        # Run alongside sector/earnings in the thread pool so the render
-        # callback just displays a pre-computed result — no blocking yfinance
-        # call on the Dash render thread.
-        return 'frontier', compute_efficient_frontier(tickers, weights)
-
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [
             pool.submit(_fetch_sector),
             pool.submit(_fetch_earnings),
-            pool.submit(_fetch_frontier),
         ]
         for f in futures:
             try:
@@ -1563,204 +1549,7 @@ def _render_earnings_inner(intel, port_data):
 
 
 
-# ── 5. Efficient frontier ──────────────────────────────────────────────────────
-# Monte Carlo simulation: 2500 random weight combinations for the current
-# holdings, coloured by Sharpe ratio.  The user's actual allocation is shown
-# as a star.  This reveals whether the current weighting sits on the efficient
-# envelope or whether a simple reallocation could improve risk-adjusted returns.
-
-@app.callback(
-    Output('frontier-section', 'children'),
-    Input('market-intel-data', 'data'),
-    State('portfolio-data', 'data'),
-)
-def render_frontier(intel, port_data):
-    try:
-        return _render_frontier_inner(intel, port_data)
-    except Exception as e:
-        return _intel_error("Efficient Frontier", e)
-
-
-def _render_frontier_inner(intel, port_data):
-    if not intel:
-        return _intel_loading('efficient frontier data')
-    if not port_data or 'positions' not in port_data:
-        return None
-
-    # Use the pre-computed frontier from the store (computed in populate_market_intel
-    # alongside sector/earnings) so this render callback never blocks on yfinance.
-    result = intel.get('frontier')
-    if result is None:
-        return html.Div(
-            html.P("Need at least 2 positions with 90+ days of history.",
-                   style={'fontSize': '15px', 'color': '#bbb',
-                          'textAlign': 'center', 'padding': '24px 0'}),
-            style=CARD)
-
-    portfolios = result['portfolios']
-    current    = result['current']
-
-    vols    = [p['vol']    for p in portfolios]
-    rets    = [p['ret']    for p in portfolios]
-    sharpes = [p['sharpe'] for p in portfolios]
-
-    fig = go.Figure()
-
-    # Random portfolios cloud
-    fig.add_trace(go.Scatter(
-        x=vols, y=rets,
-        mode='markers',
-        marker=dict(
-            color=sharpes,
-            colorscale='Viridis',
-            size=4,
-            opacity=0.5,
-            colorbar=dict(title=dict(text='Sharpe', side='right'),
-                          thickness=10, len=0.7,
-                          tickfont=dict(size=10)),
-        ),
-        hovertemplate=(
-            'Vol: <b>%{x:.1f}%</b><br>'
-            'Return: <b>%{y:.1f}%</b><br>'
-            'Sharpe: <b>%{marker.color:.2f}</b>'
-            '<extra>Random portfolio</extra>'
-        ),
-        name='2 500 random portfolios',
-    ))
-
-    # Current portfolio star — marker + persistent annotation
-    fig.add_trace(go.Scatter(
-        x=[current['vol']], y=[current['ret']],
-        mode='markers',
-        marker=dict(color='#ff3b30', size=16, symbol='star',
-                    line=dict(color='#fff', width=1.5)),
-        hovertemplate=(
-            f"<b>Your portfolio</b><br>"
-            f"Vol: {current['vol']:.1f}%<br>"
-            f"Return: {current['ret']:.1f}%<br>"
-            f"Sharpe: {current['sharpe']:.2f}"
-            "<extra></extra>"
-        ),
-        name='★ Your portfolio',
-    ))
-    fig.add_annotation(
-        x=current['vol'],
-        y=current['ret'],
-        text=f"<b>Your portfolio</b>  Sharpe: {current['sharpe']:.2f}",
-        showarrow=True,
-        arrowhead=2,
-        arrowcolor='#ff3b30',
-        arrowwidth=1.5,
-        ax=50,
-        ay=-40,
-        font=dict(size=11, color='#ff3b30'),
-        bgcolor='rgba(255,255,255,0.88)',
-        bordercolor='#ff3b30',
-        borderwidth=1,
-        borderpad=4,
-        xanchor='left',
-    )
-
-    fig.update_layout(
-        margin=dict(t=40, b=8, l=0, r=0),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        showlegend=True,
-        legend=dict(orientation='h', x=0, y=1.0, xanchor='left', yanchor='bottom',
-                    font=dict(size=12, color='#888'),
-                    bgcolor='rgba(0,0,0,0)'),
-        hovermode='closest',
-        xaxis=dict(title=dict(text='Annualised Volatility (%)', font=dict(size=12)),
-                   showgrid=True, gridcolor='#f5f5f5', zeroline=False,
-                   tickfont=dict(size=11, color='#bbb')),
-        yaxis=dict(title=dict(text='Annualised Return (%)', font=dict(size=12)),
-                   showgrid=True, gridcolor='#f5f5f5', zeroline=False,
-                   tickfont=dict(size=11, color='#bbb')),
-        height=340,
-    )
-
-    # Percentile rank of current Sharpe vs the simulated cloud
-    all_sharpes = sorted(sharpes)
-    rank = sum(1 for s in all_sharpes if s < current['sharpe']) / len(all_sharpes) * 100
-    rank_color = '#16a34a' if rank >= 60 else ('#b45309' if rank >= 40 else '#dc2626')
-    sharpe_val = current['sharpe']
-
-    # Plain-language interpretation of the result
-    if rank >= 75:
-        interpretation = (
-            f"Your portfolio's Sharpe of {sharpe_val:.2f} places it in the top {100-rank:.0f}% "
-            f"of all {len(all_sharpes):,} tested weightings. Your current allocation is "
-            f"well-optimised — you are capturing strong returns relative to the risk you carry."
-        )
-    elif rank >= 50:
-        interpretation = (
-            f"Your portfolio's Sharpe of {sharpe_val:.2f} is above the median of all "
-            f"{len(all_sharpes):,} tested weightings. Your allocation is reasonably efficient, "
-            f"though a modest rebalancing could push you closer to the efficient frontier."
-        )
-    elif rank >= 25:
-        interpretation = (
-            f"Your portfolio's Sharpe of {sharpe_val:.2f} sits in the lower half of "
-            f"{len(all_sharpes):,} tested weightings. There is meaningful room to improve "
-            f"risk-adjusted returns by reweighting your current holdings."
-        )
-    else:
-        interpretation = (
-            f"Your portfolio's Sharpe of {sharpe_val:.2f} is in the bottom quarter of "
-            f"{len(all_sharpes):,} tested weightings. The current allocation carries more "
-            f"risk than return relative to alternative weightings of the same holdings."
-        )
-
-    sharpe_explainer = html.Div([
-        html.Div([
-            html.P("What is the Sharpe ratio?", style={
-                'fontSize': '14px', 'fontWeight': '600', 'color': '#111',
-                'margin': '0 0 6px',
-            }),
-            html.P(
-                "The Sharpe ratio measures how much return your portfolio earns per unit of risk. "
-                "It is calculated as: (Portfolio Return − Risk-Free Rate) ÷ Annualised Volatility. "
-                "A Sharpe above 1.0 is generally considered good; above 2.0 is excellent. "
-                "Negative values mean the portfolio underperforms even a risk-free asset.",
-                style={'fontSize': '14px', 'color': '#555', 'margin': '0',
-                       'lineHeight': '1.65'},
-            ),
-        ], style={
-            'padding': '16px', 'background': '#fafafa',
-            'borderRadius': '10px', 'marginTop': '20px',
-            'borderLeft': '3px solid #e0e0e0',
-        }),
-        html.Div([
-            html.P("Your result", style={
-                'fontSize': '14px', 'fontWeight': '600', 'color': '#111',
-                'margin': '0 0 6px',
-            }),
-            html.P(interpretation, style={
-                'fontSize': '14px', 'color': '#555', 'margin': '0',
-                'lineHeight': '1.65',
-            }),
-        ], style={
-            'padding': '16px', 'background': '#fafafa',
-            'borderRadius': '10px', 'marginTop': '10px',
-            'borderLeft': f'3px solid {rank_color}',
-        }),
-    ])
-
-    return html.Div([
-        section_label("Efficient Frontier (90-day)"),
-        html.P("2,500 randomly-weighted versions of your holdings · "
-               "colour = Sharpe ratio (darker is higher) · ★ = your actual allocation",
-               style={'fontSize': '14px', 'color': '#777', 'margin': '-8px 0 12px'}),
-        dcc.Graph(figure=fig, config={'displayModeBar': False}),
-        sharpe_explainer,
-    ], style=CARD)
-
-
-
-# ── 7. Historical Scenario Stress Test ─────────────────────────────────────────
-# Preset crisis scenarios with their known drawdowns by asset class.
-# Applied to the current portfolio using sector/geography mapping.
-
-_SCENARIOS = [
+_SCENARIOS = [  # kept for potential future use — not rendered
     {
         'name':       '2008 Global Financial Crisis',
         'period':     'Sep 2008 – Mar 2009',
@@ -1829,234 +1618,8 @@ _SCENARIOS = [
 ]
 
 
-@app.callback(
-    Output('scenarios-section', 'children'),
-    Input('market-intel-data', 'data'),
-    State('portfolio-data', 'data'),
-)
-def render_scenarios(intel, port_data):
-    try:
-        return _render_scenarios_inner(intel, port_data)
-    except Exception as e:
-        return _intel_error("Historical Scenarios", e)
-
-
-def _render_scenarios_inner(intel, port_data):
-    if not intel:
-        return _intel_loading('scenario data')
-    if not port_data or 'positions' not in port_data:
-        return None
-
-    sg        = intel.get('sector_geo', {})
-    positions = port_data['positions']
-    rate      = port_data.get('account', {}).get('eurusd_rate', 1.08)
-    total_val = sum(p['market_value'] for p in positions) or 1
-
-    # Compute scenario impacts
-    scenario_results = []
-    for sc in _SCENARIOS:
-        total_impact = 0.0
-        position_impacts = []
-        for p in positions:
-            sym    = p['ticker']
-            val    = p['market_value']
-            sector = sg.get(sym, {}).get('sector', 'Unknown')
-            shock  = sc['shocks'].get(sector, sc['market_drop'])
-            impact = round(val * shock / 100, 0)
-            total_impact += impact
-            position_impacts.append((sym, sector, shock, impact))
-
-        pct_impact = round(total_impact / total_val * 100, 1)
-        worst_pos  = min(position_impacts, key=lambda x: x[3])
-        scenario_results.append({
-            'name':       sc['name'],
-            'period':     sc['period'],
-            'market_drop': sc['market_drop'],
-            'total_impact': round(total_impact, 0),
-            'pct_impact':  pct_impact,
-            'positions':   position_impacts,
-            'worst':       worst_pos,
-        })
-
-    # Sort by total impact (worst first)
-    scenario_results.sort(key=lambda x: x['total_impact'])
-
-    # ── Summary card for each scenario ───────────────────────────────────────
-    def scenario_card(s):
-        imp_color  = '#dc2626' if s['total_impact'] < 0 else '#16a34a'
-        imp_bg     = '#fef2f2' if s['total_impact'] < 0 else '#f0fdf4'
-        imp_brd    = '#fecaca' if s['total_impact'] < 0 else '#bbf7d0'
-
-        worst_sym, _, worst_shock, worst_imp = s['worst']
-
-        return html.Div([
-            html.Div([
-                html.Span(s['name'], style={'fontSize': '15px', 'fontWeight': '600',
-                                            'color': '#111'}),
-                html.Span(f"  ·  {s['period']}", style={'fontSize': '13px', 'color': '#888'}),
-            ], style={'marginBottom': '8px'}),
-
-            html.Div([
-                html.Div([
-                    html.P("Portfolio Impact", style={'fontSize': '12px', 'color': '#777',
-                                                       'margin': '0 0 1px',
-                                                       'textTransform': 'uppercase',
-                                                       'letterSpacing': '0.05em'}),
-                    html.Span(f"${s['total_impact']:+,.0f}",
-                              style={'fontSize': '16px', 'fontWeight': '600',
-                                     'color': imp_color}),
-                    html.Span(f"  {s['pct_impact']:+.1f}%",
-                              style={'fontSize': '13px', 'color': '#888'}),
-                ]),
-                html.Div([
-                    html.P("S&P 500", style={'fontSize': '12px', 'color': '#777',
-                                             'margin': '0 0 1px',
-                                             'textTransform': 'uppercase',
-                                             'letterSpacing': '0.05em'}),
-                    html.Span(f"{s['market_drop']:+.0f}%",
-                              style={'fontSize': '16px', 'fontWeight': '600',
-                                     'color': '#dc2626'}),
-                ]),
-                html.Div([
-                    html.P("Hardest Hit", style={'fontSize': '12px', 'color': '#777',
-                                                  'margin': '0 0 1px',
-                                                  'textTransform': 'uppercase',
-                                                  'letterSpacing': '0.05em'}),
-                    html.Span(worst_sym, style={'fontSize': '16px', 'fontWeight': '600',
-                                                'color': '#111'}),
-                    html.Span(f"  {worst_shock:+.0f}%",
-                              style={'fontSize': '13px', 'color': '#888'}),
-                ]),
-            ], style={'display': 'flex', 'gap': '24px'}),
-        ], style={
-            'background': imp_bg, 'borderRadius': '8px', 'padding': '10px 14px',
-            'border': f'0.5px solid {imp_brd}', 'marginBottom': '8px',
-        })
-
-    scenario_cards = [scenario_card(s) for s in scenario_results]
-
-    # ── Downturn spike chart ──────────────────────────────────────────────────
-    _SPIKES = [
-        {'label': 'Dot-com Bust',          'date': '2002-10-09', 'pct': -49},
-        {'label': '2008 Financial Crisis', 'date': '2009-03-09', 'pct': -56},
-        {'label': 'COVID-19 Crash',        'date': '2020-03-23', 'pct': -34},
-        {'label': '2022 Bear Market',      'date': '2022-10-12', 'pct': -25},
-    ]
-
-    crisis_fig = go.Figure()
-
-    _DAY_MS = 86_400_000  # ms per day
-
-    # Subtle dashed reference lines
-    for ref_y in [-20, -40, -60]:
-        crisis_fig.add_hline(
-            y=ref_y,
-            line=dict(color='rgba(209,213,219,0.6)', width=1, dash='dot'),
-        )
-
-    # Baseline at 0%
-    crisis_fig.add_hline(y=0, line=dict(color='#d1d5db', width=1.5))
-
-    for sp in _SPIKES:
-        # Semi-transparent fill column behind the spike for visual weight
-        crisis_fig.add_trace(go.Bar(
-            x=[sp['date']],
-            y=[sp['pct']],
-            marker=dict(
-                color='rgba(220,38,38,0.07)',
-                line=dict(width=0),
-            ),
-            width=_DAY_MS * 480,
-            showlegend=False,
-            hoverinfo='skip',
-        ))
-
-        # Vertical spike line
-        crisis_fig.add_trace(go.Scatter(
-            x=[sp['date'], sp['date']],
-            y=[0, sp['pct']],
-            mode='lines',
-            line=dict(color='#dc2626', width=2),
-            showlegend=False,
-            hovertemplate=(
-                f"<b>{sp['label']}</b><br>"
-                f"Peak-to-trough: <b>{sp['pct']}%</b>"
-                "<extra></extra>"
-            ),
-        ))
-
-        # Small horizontal cap at the trough
-        crisis_fig.add_trace(go.Scatter(
-            x=[sp['date']], y=[sp['pct']],
-            mode='markers',
-            marker=dict(color='#dc2626', size=7, symbol='line-ew',
-                        line=dict(color='#dc2626', width=2.5)),
-            showlegend=False,
-            hoverinfo='skip',
-        ))
-
-    crisis_fig.update_layout(
-        margin=dict(t=16, b=8, l=4, r=16),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        showlegend=False,
-        bargap=0,
-        xaxis=dict(
-            showgrid=False, zeroline=False,
-            tickfont=dict(size=11, color='#9ca3af'),
-            tickformat='%Y',
-            type='date',
-            range=['1998-01-01', '2025-06-01'],
-            tickmode='linear',
-            dtick='M60',
-        ),
-        yaxis=dict(
-            showgrid=False, zeroline=False,
-            tickfont=dict(size=10, color='#9ca3af'),
-            ticksuffix='%',
-            range=[-75, 20],
-            tickvals=[-60, -40, -20, 0],
-        ),
-        height=320,
-        hovermode='closest',
-        annotations=(
-            # Crisis name labels above 0% line
-            [
-                dict(
-                    x=sp['date'], y=12,
-                    text=f"<b>{sp['label']}</b>",
-                    showarrow=False,
-                    font=dict(size=10, color='#6b7280'),
-                    xanchor='center',
-                    yanchor='bottom',
-                    align='center',
-                )
-                for sp in _SPIKES
-            ]
-            # Trough % labels below each spike, clear of the cap marker
-            + [
-                dict(
-                    x=sp['date'], y=sp['pct'] - 4,
-                    text=f"<b>{sp['pct']}%</b>",
-                    showarrow=False,
-                    font=dict(size=12, color='#dc2626'),
-                    xanchor='center',
-                    yanchor='top',
-                )
-                for sp in _SPIKES
-            ]
-        ),
-    )
-
-    return html.Div([
-        section_label("Historical Bear Markets"),
-        html.P(
-            "S&P 500 peak-to-trough drawdown for each major bear market.",
-            style={'fontSize': '13px', 'color': '#9ca3af', 'margin': '-8px 0 4px', 'lineHeight': '1.6'},
-        ),
-        dcc.Graph(figure=crisis_fig, config={'displayModeBar': False}),
-    ], style=CARD)
-
+def _render_scenarios_inner(intel, port_data):  # unused — section removed
+    return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MARKET VALUATION CALLBACKS
@@ -2082,11 +1645,12 @@ def populate_valuation_data(_):
             return key, None
 
     result = {}
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [
             pool.submit(_fetch, 'buffett',  get_buffett_indicator),
             pool.submit(_fetch, 'sp500_pe', get_sp500_pe),
             pool.submit(_fetch, 'cape',     get_shiller_cape),
+            pool.submit(_fetch, 'treasury', get_treasury_yield),
         ]
         for f in futures:
             key, val = f.result()
@@ -2187,9 +1751,10 @@ def _render_market_valuation_inner(data):
     if data is None:
         return _intel_loading('valuation data')
 
-    buffett_d = data.get('buffett')
-    pe_d      = data.get('sp500_pe')
-    cape_d    = data.get('cape')
+    buffett_d  = data.get('buffett')
+    pe_d       = data.get('sp500_pe')
+    cape_d     = data.get('cape')
+    treasury_d = data.get('treasury')
 
     # ── Card builder ──────────────────────────────────────────────────────────
     def metric_card(title, subtitle, body, footer=None):
@@ -2228,28 +1793,43 @@ def _render_market_valuation_inner(data):
     if buffett_d:
         bv     = buffett_d['value']
         blabel, bcolor = buffett_zone(bv)
+        # How far above the modern ~127% trend line we are
+        modern_trend    = 127
+        above_trend_pct = round(bv - modern_trend, 0)
+
         b_body = html.Div([
             big_value(f'{bv:.1f}%', bcolor),
             zone_badge(blabel, bcolor),
             _val_zone_bar(bv, [
-                ('Undervalued',        75,  '#16a34a'),
-                ('Fairly Valued',     100,  '#22c55e'),
-                ('Modestly Overval.', 120,  '#eab308'),
-                ('Overvalued',        150,  '#f97316'),
-                ('Strongly Overval.', 200,  '#dc2626'),
-            ], display_max=200),
+                ('Well Below Norms',   75,  '#16a34a'),
+                ('Fairly Valued',     110,  '#22c55e'),
+                ('Modern Range',      150,  '#84cc16'),
+                ('Running Hot',       190,  '#f97316'),
+                ('Stretched',         280,  '#dc2626'),
+            ], display_max=280),
             html.Div([
                 html.Span(f"Mkt Cap  ${buffett_d['market_cap_t']:.1f}T",
                           style={'fontSize': '13px', 'color': '#666'}),
-                html.Span(' · ', style={'color': '#bbb', 'fontSize': '13px'}),
-                html.Span(f"GDP  ${buffett_d['gdp_t']:.1f}T ({buffett_d['gdp_year']})",
+                html.Span('  \u00b7  ', style={'color': '#bbb', 'fontSize': '13px'}),
+                html.Span(f"GDP  ${buffett_d['gdp_t']:.1f}T",
                           style={'fontSize': '13px', 'color': '#999'}),
             ], style={'marginTop': '8px'}),
+            html.Div([
+                html.Span(
+                    f'The market is {bv/100:.1f}\u00d7 the size of the US economy'
+                    f' \u2014 {above_trend_pct:.0f}% above the modern trend line.',
+                    style={'fontSize': '12px', 'color': '#555', 'fontStyle': 'italic'},
+                ),
+                html.Br(),
+                html.Span(
+                    f'GDP as of {buffett_d["gdp_quarter"]} ({buffett_d["gdp_source"]})'
+                    ' \u2014 1\u20132 quarter lag is normal.',
+                    style={'fontSize': '11px', 'color': '#bbb'},
+                ),
+            ], style={'marginTop': '6px'}),
         ])
         b_foot = (
-            'Warren Buffett\'s favourite macro yardstick: '
-            '"The best single measure of where valuations stand at any given moment." '
-            'Historical fair value: ~100%. Above 150% signals significant overvaluation.'
+            'Buffett: \u201cThe best single measure of where valuations stand at any given moment.\u201d '
         )
     else:
         b_body = _val_unavailable()
@@ -2319,20 +1899,94 @@ def _render_market_valuation_inner(data):
             ], style={'marginTop': '8px'}),
         ])
         cape_foot = (
-            'Uses 10 years of inflation-adjusted earnings to smooth cycles. '
-            f'Historical average: ~{cape_d["hist_mean"]:.0f}×. '
-            'Developed by Robert Shiller (Yale). '
-            'Above 30× has historically preceded periods of low returns.'
+            'Uses 10 years of inflation-adjusted earnings to smooth short-term noise. '
+            f'100-year average: ~{cape_d["hist_mean"]:.0f}\u00d7. '
+            'The modern (20-year) average is ~25\u00d7, reflecting higher structural '
+            'valuations since the tech era. The chart marks major crashes to show that '
+            'elevated readings did eventually matter \u2014 just not on a fixed timeline.'
         )
     else:
         cape_body = _val_unavailable()
         cape_foot = None
 
     cards = html.Div([
-        metric_card('Buffett Indicator', 'Total US Mkt Cap / GDP', b_body, b_foot),
-        metric_card('S&P 500 P/E Ratio', 'Price-to-earnings (trailing 12M)', pe_body, pe_foot),
-        metric_card('Shiller CAPE', 'Cyclically Adjusted P/E (10-yr)', cape_body, cape_foot),
+        metric_card('Buffett Indicator',
+                    'Stock market size vs the economy',
+                    b_body, b_foot),
+        metric_card('S&P 500 P/E Ratio',
+                    'How much you pay per $1 of profit',
+                    pe_body, pe_foot),
+        metric_card('Shiller CAPE',
+                    'P/E smoothed over 10 years (more reliable)',
+                    cape_body, cape_foot),
     ], style={'display': 'flex', 'gap': '14px', 'alignItems': 'flex-start'})
+
+    # ── Yield Gap ─────────────────────────────────────────────────────────────
+    # Ties the P/E and Treasury yield together into a single verdict:
+    #   Earnings Yield (= 1/PE) tells you what stocks "pay" per dollar invested.
+    #   Yield Gap = Earnings Yield - 10yr Bond Yield.
+    #   Positive → stocks still offer more than "safe" bonds.
+    #   Negative → bonds pay more than stocks earn → valuations hard to justify.
+    trailing_pe = pe_d.get('trailing_pe') if pe_d else None
+    tv          = treasury_d['value']     if treasury_d else None
+
+    if trailing_pe and tv:
+        earnings_yield = round(100 / trailing_pe, 2)
+        gap            = round(earnings_yield - tv, 2)
+
+        if   gap >  2:   gap_label, gap_color = 'Stocks strongly favoured',  '#16a34a'
+        elif gap >  0:   gap_label, gap_color = 'Stocks slightly favoured',   '#22c55e'
+        elif gap > -1:   gap_label, gap_color = 'Roughly equal',              '#eab308'
+        elif gap > -2:   gap_label, gap_color = 'Bonds competitive',          '#f97316'
+        else:            gap_label, gap_color = 'Bonds clearly favoured',     '#dc2626'
+
+        gap_sign = '+' if gap >= 0 else ''
+
+        context_note = html.Div([
+            html.Div([
+                # Left: formula breakdown
+                html.Div([
+                    html.Span('Yield Gap', style={
+                        'fontWeight': '700', 'fontSize': '13px', 'color': '#333',
+                        'display': 'block', 'marginBottom': '4px',
+                    }),
+                    html.Span(
+                        f'S&P earnings yield ({earnings_yield:.2f}%) '
+                        f'\u2212 10-yr bond yield ({tv:.2f}%)',
+                        style={'fontSize': '14px', 'color': '#555'},
+                    ),
+                ]),
+                # Right: result
+                html.Div([
+                    html.Span(f'{gap_sign}{gap:.2f}%', style={
+                        'fontSize': '22px', 'fontWeight': '700',
+                        'color': gap_color, 'marginRight': '10px',
+                    }),
+                    html.Span(gap_label, style={
+                        'fontSize': '13px', 'fontWeight': '600',
+                        'color': gap_color,
+                        'background': gap_color + '18',
+                        'padding': '3px 10px', 'borderRadius': '99px',
+                    }),
+                ], style={'display': 'flex', 'alignItems': 'center'}),
+            ], style={
+                'display': 'flex', 'justifyContent': 'space-between',
+                'alignItems': 'center',
+            }),
+            html.Div(
+                'When this number is positive, stocks are earning more per dollar than '
+                'government bonds \u2014 a sign investors are still being rewarded for '
+                'the extra risk. When it turns negative, bonds pay more than stocks earn, '
+                'which makes expensive valuations harder to justify.',
+                style={'fontSize': '14px', 'color': '#555',
+                       'marginTop': '8px', 'lineHeight': '1.5'},
+            ),
+        ], style={
+            'background': '#f8f9fa', 'borderLeft': f'3px solid {gap_color}',
+            'padding': '12px 16px', 'borderRadius': '4px', 'marginTop': '18px',
+        })
+    else:
+        context_note = None
 
     # ── CAPE historical chart ─────────────────────────────────────────────────
     if cape_d and cape_d.get('dates'):
@@ -2340,26 +1994,56 @@ def _render_market_valuation_inner(data):
         dates_plot = cape_d['dates']
         vals_plot  = cape_d['values']
 
+        # Modern mean: last 20 years = last 240 monthly data points
+        modern_slice  = vals_plot[-240:] if len(vals_plot) >= 240 else vals_plot
+        modern_mean   = round(sum(modern_slice) / len(modern_slice), 1)
+
         fig = go.Figure()
 
         # Zone background bands
         bands = [
-            (0,   15, 'rgba(22,163,74,0.07)'),
-            (15,  20, 'rgba(34,197,94,0.07)'),
-            (20,  25, 'rgba(234,179,8,0.07)'),
-            (25,  30, 'rgba(249,115,22,0.07)'),
-            (30,  55, 'rgba(220,38,38,0.07)'),
+            (0,   15, 'rgba(22,163,74,0.20)'),
+            (15,  20, 'rgba(34,197,94,0.20)'),
+            (20,  25, 'rgba(234,179,8,0.20)'),
+            (25,  30, 'rgba(249,115,22,0.20)'),
+            (30,  55, 'rgba(220,38,38,0.20)'),
         ]
         for y0, y1, fill in bands:
             fig.add_hrect(y0=y0, y1=y1, fillcolor=fill,
                           layer='below', line_width=0)
 
-        # Historical mean line
+        # Major crash / drawdown periods
+        crashes = [
+            ('1987-08', '1987-12', 'Black Monday',    'top left'),
+            ('2000-03', '2002-10', 'Dot-com bust',    'top left'),
+            ('2007-10', '2009-03', 'Financial crisis','top left'),
+            ('2020-02', '2020-04', 'COVID crash',     'top right'),
+            ('2022-01', '2022-10', '2022 bear',       'top left'),
+        ]
+        for x0, x1, label, apos in crashes:
+            if x0 >= dates_plot[0]:
+                fig.add_vrect(
+                    x0=x0, x1=x1,
+                    fillcolor='rgba(100,100,100,0.10)',
+                    layer='below', line_width=0,
+                    annotation_text=f'<b>{label}</b>',
+                    annotation_position=apos,
+                    annotation_font=dict(size=11, color='#777'),
+                )
+
+        # All-time historical mean line (dotted, grey)
         fig.add_hline(y=mean_val, line_dash='dot',
-                      line_color='#aaa', line_width=1,
-                      annotation_text=f'Hist. mean {mean_val:.0f}×',
+                      line_color='#bbb', line_width=1,
+                      annotation_text=f'100-yr mean {mean_val:.0f}\u00d7',
                       annotation_position='top left',
-                      annotation_font=dict(size=10, color='#aaa'))
+                      annotation_font=dict(size=10, color='#bbb'))
+
+        # Modern mean line (dashed, blue-grey) — last 20 years
+        fig.add_hline(y=modern_mean, line_dash='dash',
+                      line_color='#378ADD', line_width=1,
+                      annotation_text=f'20-yr mean {modern_mean:.0f}\u00d7',
+                      annotation_position='bottom left',
+                      annotation_font=dict(size=10, color='#378ADD'))
 
         # CAPE line
         fig.add_trace(go.Scatter(
@@ -2367,7 +2051,7 @@ def _render_market_valuation_inner(data):
             mode='lines',
             line=dict(color='#378ADD', width=2),
             name='Shiller CAPE',
-            hovertemplate='%{x}  ·  CAPE <b>%{y:.1f}×</b><extra></extra>',
+            hovertemplate='%{x}  \u00b7  CAPE <b>%{y:.1f}\u00d7</b><extra></extra>',
         ))
 
         # Current value dot
@@ -2376,7 +2060,7 @@ def _render_market_valuation_inner(data):
             mode='markers+text',
             marker=dict(color=ccolor if cape_d else '#378ADD', size=10,
                         line=dict(color='#fff', width=2)),
-            text=[f'  {vals_plot[-1]:.1f}×'],
+            text=[f'  {vals_plot[-1]:.1f}\u00d7'],
             textposition='middle right',
             textfont=dict(size=11, color=ccolor if cape_d else '#378ADD'),
             showlegend=False,
@@ -2394,17 +2078,26 @@ def _render_market_valuation_inner(data):
                        tickangle=-30),
             yaxis=dict(showgrid=True, gridcolor='#f5f5f5', zeroline=False,
                        tickfont=dict(size=10, color='#bbb'),
-                       ticksuffix='×', title=None),
-            height=220,
+                       ticksuffix='\u00d7', title=None),
+            height=260,
         )
 
         cape_chart = html.Div([
-            html.P("Shiller CAPE — 50-year history", style={
-                'fontSize': '13px', 'color': '#666', 'margin': '20px 0 4px',
+            html.P("Shiller CAPE \u2014 50-year history", style={
+                'fontSize': '14px', 'color': '#000', 'margin': '20px 0 4px',
                 'textTransform': 'uppercase', 'letterSpacing': '0.05em',
             }),
-            html.P("Green = undervalued  ·  Yellow = overvalued  ·  Red = extremely overvalued",
-                   style={'fontSize': '13px', 'color': '#888', 'margin': '0 0 6px'}),
+            html.P([
+                html.Span("\u25ae Undervalued (<15)",        style={'color': '#16a34a'}),
+                html.Span("  \u00b7  ", style={'color': '#bbb'}),
+                html.Span("\u25ae Fairly Valued (15\u201320)",  style={'color': '#22c55e'}),
+                html.Span("  \u00b7  ", style={'color': '#bbb'}),
+                html.Span("\u25ae Overvalued (20\u201325)",      style={'color': '#eab308'}),
+                html.Span("  \u00b7  ", style={'color': '#bbb'}),
+                html.Span("\u25ae Highly Overvalued (25\u201330)", style={'color': '#f97316'}),
+                html.Span("  \u00b7  ", style={'color': '#bbb'}),
+                html.Span("\u25ae Extremely Overvalued (30+)",  style={'color': '#dc2626'}),
+            ], style={'fontSize': '14px', 'margin': '0 0 6px'}),
             dcc.Graph(figure=fig, config={'displayModeBar': False}),
         ])
     else:
@@ -2413,5 +2106,6 @@ def _render_market_valuation_inner(data):
     return html.Div([
         section_label("Market Valuation"),
         cards,
+        context_note,
         cape_chart,
     ], style=CARD)

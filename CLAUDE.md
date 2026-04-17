@@ -39,9 +39,8 @@ TWS ──► ibkr_client._do_fetch() ──► fetch_all_data()
                           (summary, holdings,       │
                            donut, dividends)    dcc.Store('market-intel-data')
                                                      │
-                                            4 rendering callbacks
-                                            (sector/geo, earnings,
-                                             frontier, scenarios)
+                                            2 rendering callbacks
+                                            (sector/geo, earnings)
 
 dcc.Interval('refresh-interval') ──► populate_valuation_data()
                                          │
@@ -61,9 +60,9 @@ dcc.Interval('refresh-interval') ──► populate_valuation_data()
 | `dashboard.py` | All Dash layout and callbacks (~2000 lines) — the core of the UI |
 | `data_processor.py` | Pure pandas transforms: enriches raw positions with daily change, spread, 52w range, allocation % |
 | `analytics.py` | `get_dividend_data_yf()` — yfinance dividend fallback with 4h cache and parallel fetching |
-| `market_intel.py` | yfinance-backed: price history, correlation matrix, sector/geo, earnings, efficient frontier — all 4h cached |
-| `market_valuation.py` | Macro indicators: Buffett (Wilshire/World Bank), S&P 500 P/E (multpl.com), Shiller CAPE (multpl.com) — 4h cached |
-| `ai_analyst.py` | Dual-mode AI: rule-based analysis/chat (no API key needed) with automatic upgrade to `claude-sonnet-4-6` when `ANTHROPIC_API_KEY` is set. Public entry points: `analyse_portfolio()` and `chat_portfolio()`. |
+| `market_intel.py` | yfinance-backed: price history, correlation matrix, sector/geo, earnings — all 4h cached |
+| `market_valuation.py` | Macro indicators: Buffett (Wilshire/FRED GDP, World Bank fallback), S&P 500 P/E (multpl.com), Shiller CAPE (multpl.com), 10-yr Treasury yield (FRED) — 4h cached |
+| `ai_analyst.py` | Dual-mode AI: rule-based analysis/chat (no API key needed) with automatic upgrade to `claude-sonnet-4-6` when `ANTHROPIC_API_KEY` is set. Public entry points: `analyse_portfolio()`, `chat_portfolio()`, and `analyse_position()` (per-position analysis for the detail panel). |
 | `config.py` | Merges `config.yaml` defaults → env var overrides, exposes `cfg` dict |
 
 ### Key Dash patterns used
@@ -72,7 +71,9 @@ dcc.Interval('refresh-interval') ──► populate_valuation_data()
 - **`prevent_initial_call=True`** on user-triggered callbacks (AI analysis, PDF export, position click).
 - **`no_update`** returned from `populate_market_intel` when the ticker list hasn't changed, preventing full chart rebuilds on every 60-second refresh.
 - **`clientside_callback`** for keyboard shortcuts (R = refresh, Esc = close detail panel) to avoid round-trips.
-- **Parallel fetching** — `populate_market_intel` and `populate_valuation_data` both use `ThreadPoolExecutor` to fan out yfinance/HTTP calls concurrently.
+- **Pattern-matching callbacks** — the AI chip row uses `{'type': 'chip-btn', 'index': question}` IDs. The "Analyse Portfolio" primary action is `{'type': 'chip-btn', 'index': '__analyse__'}` (not a separate `ai-analyse-btn`).
+- **Position detail panel** — clicking a holdings row triggers `show_position_detail` (opens the slide-out panel) and `run_position_ai_analysis` (per-position Claude/rule-based analysis). The panel is a second callback surface separate from the main page layout.
+- **Parallel fetching** — `populate_market_intel` and `populate_valuation_data` both use `ThreadPoolExecutor` to fan out yfinance/HTTP calls concurrently. `populate_valuation_data` fetches 4 metrics in parallel: Buffett, S&P 500 P/E, Shiller CAPE, and 10-yr Treasury yield.
 
 ### Styling
 

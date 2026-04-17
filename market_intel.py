@@ -22,7 +22,6 @@ compute_efficient_frontier — Monte Carlo weight simulation (uses cached histor
 
 import logging
 import time
-import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 
@@ -367,69 +366,3 @@ def get_earnings_data(tickers: list) -> dict:
 
     return _cached(key, fetch)
 
-
-# ── Efficient frontier ─────────────────────────────────────────────────────────
-
-def compute_efficient_frontier(tickers: list, weights: list,
-                                period: str = '90d', n: int = 2500) -> dict | None:
-    """
-    Monte Carlo simulation of n random portfolio weight combinations.
-
-    Returns
-    -------
-    {
-      'portfolios': [{'vol': float, 'ret': float, 'sharpe': float}, ...],
-      'current':    {'vol': float, 'ret': float, 'sharpe': float},
-      'tickers':    [str, ...],
-    }
-    Returns None if fewer than 2 tickers have sufficient history.
-    """
-    try:
-        hist  = get_price_history(tickers, period)
-        valid = [s for s in tickers if s in hist and len(hist[s]['returns']) >= 20]
-        if len(valid) < 2:
-            return None
-
-        min_n = min(len(hist[s]['returns']) for s in valid)
-        R     = np.array([hist[s]['returns'][-min_n:] for s in valid])
-
-        mu  = R.mean(axis=1)
-        cov = np.cov(R)
-        rf  = 0.045 / 252
-        ann = 252
-
-        np.random.seed(0)
-        portfolios = []
-        for _ in range(n):
-            w     = np.random.dirichlet(np.ones(len(valid)))
-            p_ret = float(np.dot(w, mu))          * ann * 100
-            p_vol = float(np.sqrt(w @ cov @ w))   * np.sqrt(ann) * 100
-            p_sr  = float((np.dot(w, mu) - rf)
-                          / np.sqrt(w @ cov @ w)  * np.sqrt(ann))
-            portfolios.append({'vol': round(p_vol, 2),
-                               'ret': round(p_ret, 2),
-                               'sharpe': round(p_sr, 2)})
-
-        valid_set = set(valid)
-        w_map     = {s: w for s, w in zip(tickers, weights) if s in valid_set}
-        total_w   = sum(w_map.values())
-        if total_w <= 0:
-            w_cur = np.ones(len(valid)) / len(valid)
-        else:
-            w_cur = np.array([w_map.get(s, 0) / total_w for s in valid])
-
-        c_ret = float(np.dot(w_cur, mu))            * ann * 100
-        c_vol = float(np.sqrt(w_cur @ cov @ w_cur)) * np.sqrt(ann) * 100
-        c_sr  = float((np.dot(w_cur, mu) - rf)
-                      / np.sqrt(w_cur @ cov @ w_cur) * np.sqrt(ann))
-
-        return {
-            'portfolios': portfolios,
-            'current':    {'vol': round(c_vol, 2),
-                           'ret': round(c_ret, 2),
-                           'sharpe': round(c_sr, 2)},
-            'tickers':    valid,
-        }
-    except Exception as e:
-        log.warning('[market_intel] efficient_frontier error: %s', e)
-        return None

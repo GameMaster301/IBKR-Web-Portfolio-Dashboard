@@ -41,12 +41,18 @@ def _cached(key, fn):
 # ── Zone classifiers ───────────────────────────────────────────────────────────
 
 def buffett_zone(v: float) -> tuple[str, str]:
-    """(label, hex-colour) for a given Buffett Indicator value (%)."""
-    if v < 75:   return ('Undervalued',          '#16a34a')
-    if v < 100:  return ('Fairly Valued',         '#22c55e')
-    if v < 120:  return ('Modestly Overvalued',   '#eab308')
-    if v < 150:  return ('Overvalued',            '#f97316')
-    return              ('Strongly Overvalued',   '#dc2626')
+    """(label, hex-colour) for a given Buffett Indicator value (%).
+
+    Thresholds anchored to the modern structural baseline (~125-130%),
+    not the pre-tech-era 100%.  The US economy shifted from capital-heavy
+    industry to high-margin software, so market cap naturally runs higher
+    relative to GDP today.
+    """
+    if v < 75:   return ('Well Below Historic Norms',     '#16a34a')
+    if v < 110:  return ('Fairly Valued',                 '#22c55e')
+    if v < 150:  return ('Elevated — Within Modern Range', '#84cc16')
+    if v < 190:  return ('Running Hot',                   '#f97316')
+    return              ('Historically Stretched',        '#dc2626')
 
 
 def pe_zone(v: float) -> tuple[str, str]:
@@ -67,56 +73,152 @@ def cape_zone(v: float) -> tuple[str, str]:
     return              ('Extremely Overvalued',   '#dc2626')
 
 
+def treasury_zone(v: float) -> tuple[str, str]:
+    """
+    (label, hex-colour) for the 10-year Treasury yield (%).
+
+    Low yield  → bonds pay little → stocks face less competition (green).
+    High yield → bonds pay well   → stocks must justify higher valuations (red).
+    """
+    if v < 2:    return ('Very Low — Stocks Favoured',   '#16a34a')
+    if v < 3:    return ('Low — Stocks Competitive',     '#22c55e')
+    if v < 4:    return ('Moderate',                     '#eab308')
+    if v < 5:    return ('Elevated — Bonds Competitive', '#f97316')
+    return              ('High — Bonds Attractive',      '#dc2626')
+
+
 # ── Buffett Indicator ──────────────────────────────────────────────────────────
+
+def _fred_date_to_quarter(date_str: str) -> str:
+    """Convert a FRED quarterly date string to a readable quarter label.
+    '2025-10-01' -> 'Q4 2025',  '2025-07-01' -> 'Q3 2025', etc.
+    """
+    try:
+        month = int(date_str[5:7])
+        year  = date_str[:4]
+        return f'Q{(month - 1) // 3 + 1} {year}'
+    except Exception:
+        return date_str[:7]
+
 
 def get_buffett_indicator() -> dict | None:
     """
     Total US equity market cap (Wilshire 5000 index ≈ market cap in $B)
-    divided by US nominal GDP (World Bank, latest available year) × 100.
+    divided by US nominal GDP × 100.
+
+    GDP source: FRED (St. Louis Fed) quarterly series — updated within weeks
+    of each BEA release, far more current than World Bank annual data.
+    Fallback: World Bank annual data (1-2 years stale but always available).
 
     Returns
     -------
-    {value, market_cap_t, gdp_t, gdp_year}  or None on failure.
+    {value, market_cap_t, gdp_t, gdp_quarter, gdp_source}  or None on failure.
     """
+    _UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+
     def fetch():
         import yfinance as yf
+        import io
 
-        # Wilshire 5000 Full Cap index — designed so index level ≈ US total
-        # equity market cap in billions of USD (Wilshire Associates convention).
+        # Wilshire 5000 Full Cap index — index level ≈ US total equity market
+        # cap in billions of USD (Wilshire Associates convention).
         hist = yf.Ticker('^W5000').history(period='5d')
         if hist.empty:
             raise RuntimeError('Empty Wilshire 5000 history')
         market_cap_b = float(hist['Close'].dropna().iloc[-1])
 
-        # US nominal GDP from World Bank (free, no API key required).
-        # mrv=3 asks for the 3 most recent annual records; we take the first
-        # non-null one (usually 1-2 years behind real-time).
-        url = (
-            'https://api.worldbank.org/v2/country/US/indicator/NY.GDP.MKTP.CD'
-            '?format=json&mrv=3&per_page=3'
-        )
-        req = urllib.request.Request(url, headers={'User-Agent': 'ibkrdash/1.0'})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
+        import datetime
+        gdp_b, gdp_quarter, gdp_source = None, None, None
+        now          = datetime.datetime.now()
+        current_year = now.year
+        current_q    = (now.month - 1) // 3 + 1
 
-        gdp_usd, gdp_year = None, None
-        for record in (data[1] or []):
-            if record.get('value') is not None:
-                gdp_usd  = float(record['value'])
-                gdp_year = record.get('date', '')
+        def _quarters_since(data_year: int, data_q: int) -> int:
+            return (current_year - data_year) * 4 + (current_q - data_q)
+
+        def _forward_extrapolate(gdp_val: float, data_year: int, data_q: int,
+                                 quarterly_rate: float = 0.0068) -> tuple:
+            """Project gdp_val forward to the current quarter.
+            quarterly_rate=0.0068 ≈ 2.8% annualised nominal growth.
+            Returns (projected_gdp, label).  Label is '(est.)' when projected.
+            """
+            n = _quarters_since(data_year, data_q)
+            if n <= 0:
+                return gdp_val, f'Q{data_q} {data_year}'
+            projected = gdp_val * (1 + quarterly_rate) ** n
+            return projected, f'Q{current_q} {current_year} (est.)'
+
+        # ── Primary: FRED GDP series (two URL formats) ────────────────────────
+        for fred_url in [
+            'https://fred.stlouisfed.org/graph/fredgraph.csv?id=GDP',
+            'https://fred.stlouisfed.org/data/GDP.txt',
+        ]:
+            try:
+                req = urllib.request.Request(fred_url, headers={'User-Agent': _UA})
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    raw = resp.read().decode('utf-8')
+                if raw.lstrip().startswith('<'):
+                    raise ValueError('FRED returned HTML')
+                df = pd.read_csv(io.StringIO(raw), names=['date', 'gdp'], skiprows=1)
+                df = df[df['gdp'] != '.'].copy()
+                df['gdp'] = pd.to_numeric(df['gdp'], errors='coerce')
+                df = df.dropna(subset=['gdp'])
+                if df.empty:
+                    raise ValueError('No numeric rows in FRED response')
+                latest_date = str(df.iloc[-1]['date'])   # e.g. "2025-10-01"
+                raw_gdp     = float(df.iloc[-1]['gdp'])
+                data_year   = int(latest_date[:4])
+                data_q      = (int(latest_date[5:7]) - 1) // 3 + 1
+                # Use actual trailing growth rate from FRED data if available
+                if len(df) >= 4:
+                    quarterly_rate = (raw_gdp / float(df.iloc[-4]['gdp'])) ** 0.25 - 1
+                else:
+                    quarterly_rate = 0.0068
+                gdp_b, gdp_quarter = _forward_extrapolate(
+                    raw_gdp, data_year, data_q, quarterly_rate)
+                gdp_source = 'FRED'
+                log.debug('Buffett GDP from FRED: raw %s $%.1fT → %s $%.1fT',
+                          _fred_date_to_quarter(latest_date), raw_gdp / 1000,
+                          gdp_quarter, gdp_b / 1000)
                 break
+            except Exception as e:
+                log.warning('FRED GDP attempt failed (%s): %s', fred_url, e)
 
-        if gdp_usd is None:
-            raise RuntimeError('World Bank returned no GDP value')
+        # ── Fallback: World Bank annual nominal GDP (current USD) ─────────────
+        if gdp_b is None:
+            try:
+                url = (
+                    'https://api.worldbank.org/v2/country/US/indicator/NY.GDP.MKTP.CD'
+                    '?format=json&mrv=3&per_page=3'
+                )
+                req = urllib.request.Request(url, headers={'User-Agent': _UA})
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read())
+                for record in (data[1] or []):
+                    if record.get('value') is not None:
+                        raw_gdp   = float(record['value']) / 1e9
+                        data_year = int(record.get('date', current_year))
+                        # World Bank gives annual data; treat as Q4 of that year
+                        gdp_b, gdp_quarter = _forward_extrapolate(
+                            raw_gdp, data_year, 4)
+                        gdp_source = 'World Bank'
+                        log.debug('Buffett GDP from World Bank: %d $%.1fT → %s $%.1fT',
+                                  data_year, raw_gdp / 1000, gdp_quarter, gdp_b / 1000)
+                        break
+            except Exception as e:
+                log.warning('World Bank GDP fetch also failed: %s', e)
 
-        gdp_b = gdp_usd / 1e9   # current USD → billions
+        if gdp_b is None:
+            raise RuntimeError('Could not fetch GDP from FRED or World Bank')
+
         ratio = (market_cap_b / gdp_b) * 100
 
         return {
             'value':        round(ratio, 1),
-            'market_cap_t': round(market_cap_b / 1_000, 1),   # $T
-            'gdp_t':        round(gdp_b        / 1_000, 1),   # $T
-            'gdp_year':     gdp_year,
+            'market_cap_t': round(market_cap_b / 1_000, 1),
+            'gdp_t':        round(gdp_b        / 1_000, 1),
+            'gdp_quarter':  gdp_quarter,
+            'gdp_source':   gdp_source,
         }
 
     try:
@@ -267,4 +369,29 @@ def get_shiller_cape() -> dict | None:
         return _cached('shiller_cape', fetch)
     except Exception as e:
         log.warning('Shiller CAPE fetch failed: %s', e)
+        return None
+
+
+# ── 10-Year Treasury Yield ─────────────────────────────────────────────────────
+
+def get_treasury_yield() -> dict | None:
+    """
+    Current US 10-year Treasury yield (^TNX via yfinance).
+
+    Returns
+    -------
+    {value}  e.g. {'value': 4.35}  or None on failure.
+    """
+    def fetch():
+        import yfinance as yf
+        hist = yf.Ticker('^TNX').history(period='5d')
+        if hist.empty:
+            raise RuntimeError('Empty ^TNX history')
+        value = round(float(hist['Close'].dropna().iloc[-1]), 2)
+        return {'value': value}
+
+    try:
+        return _cached('treasury_yield', fetch)
+    except Exception as e:
+        log.warning('Treasury yield fetch failed: %s', e)
         return None
