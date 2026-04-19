@@ -98,23 +98,6 @@ To start automatically on every boot:
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-OPTIONAL — Enable AI Analysis
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-The dashboard includes built-in portfolio analysis that works
-without any setup. To upgrade to Claude AI analysis:
-
-  1. Get a free API key at https://console.anthropic.com/
-  2. Open .env and uncomment this line:
-       # ANTHROPIC_API_KEY=sk-ant-...
-     Change it to:
-       ANTHROPIC_API_KEY=sk-ant-YOUR-KEY-HERE
-  3. Run update.bat (or ./update.sh) to restart with the new key
-
-Your API key stays on your machine and is never shared.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TROUBLESHOOTING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

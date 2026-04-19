@@ -26,9 +26,6 @@ services:
       REFRESH_INTERVAL: ${REFRESH_INTERVAL:-60}
       OPEN_BROWSER: "0"
 
-      # ── Optional: Anthropic key for AI analysis ────────────────────────────
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-
     restart: unless-stopped
 
     # Give containers access to the host network on Linux

@@ -65,11 +65,6 @@ IBKR_READONLY=true
 # ── Dashboard ──────────────────────────────────────────────────────────
 DASH_PORT=8050
 OPEN_BROWSER=0
-
-# ── AI analysis (optional) ─────────────────────────────────────────────
-# Uncomment and fill in for Claude-powered portfolio analysis.
-# Get your key at https://console.anthropic.com/
-# ANTHROPIC_API_KEY=sk-ant-...
 EOF
 fi
 echo "OK"

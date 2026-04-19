@@ -5,3 +5,4 @@ __pycache__/
 portfolio.db
 .claude/
 .env
+data/

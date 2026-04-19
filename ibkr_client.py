@@ -25,13 +25,18 @@ TWS ports (if you prefer TWS):
 import asyncio
 import logging
 import threading
-import time
-from ib_async import IB, Forex
+from datetime import datetime, timedelta
+from ib_async import IB, Forex, ExecutionFilter
 
 log = logging.getLogger(__name__)
 
 _MAX_BACKOFF   = 120   # seconds
 _BASE_BACKOFF  =   5   # seconds
+
+# Common IBKR API ports. The configured port is tried first; if it fails we
+# fall through the rest so the dashboard works with either IB Gateway or TWS,
+# paper or live, without the user having to edit config.
+_FALLBACK_PORTS = [7497, 4002, 7496, 4001]
 
 
 class _IBKRConnection:
@@ -41,6 +46,7 @@ class _IBKRConnection:
         self._connected: bool                    = False
         self._fetch_lock   = threading.Lock()
         self._conn_attempt = 0   # counts consecutive failures for back-off
+        self._retry_event: asyncio.Event | None = None   # wakes the reconnect sleep
 
         # Config (set by start())
         self._host               = '127.0.0.1'
@@ -95,49 +101,117 @@ class _IBKRConnection:
     def _thread_main(self):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
+        self._retry_event = asyncio.Event()
         self._loop.run_until_complete(self._connection_loop())
 
+    def request_retry(self):
+        """Wake the reconnect loop immediately and reset back-off.
+
+        Safe to call from any thread (e.g. a Dash callback). No-op if the
+        background thread hasn't started yet or is already connected.
+        """
+        loop = self._loop
+        evt  = self._retry_event
+        if loop is None or evt is None:
+            return
+        self._conn_attempt = 0
+        loop.call_soon_threadsafe(evt.set)
+
+    async def _sleep_or_retry(self, delay: float):
+        """Sleep up to `delay` seconds, but wake early if request_retry() fires."""
+        evt = self._retry_event
+        if evt is None:
+            await asyncio.sleep(delay)
+            return
+        try:
+            await asyncio.wait_for(evt.wait(), timeout=delay)
+        except asyncio.TimeoutError:
+            pass
+        evt.clear()
+
+    def _candidate_ports(self) -> list[int]:
+        """Configured port first, then the other common IBKR ports."""
+        ports = [self._port]
+        for p in _FALLBACK_PORTS:
+            if p not in ports:
+                ports.append(p)
+        return ports
+
     async def _connection_loop(self):
-        """Connect → heartbeat → reconnect on drop, forever, with back-off."""
+        """Connect → heartbeat → reconnect on drop, forever, with back-off.
+
+        On each round we try the configured port first, then fall through the
+        other common IBKR ports (IB Gateway 4001/4002, TWS 7496/7497) so the
+        dashboard works regardless of which client the user is running.
+        """
         while True:
-            ib          = IB()
-            disc_event  = asyncio.Event()
+            connected_ib: IB | None     = None
+            disc_event:   asyncio.Event = asyncio.Event()
+            on_disc                     = None
 
-            def _on_disconnect():
-                self._loop.call_soon_threadsafe(disc_event.set)
+            for port in self._candidate_ports():
+                ib = IB()
+                ev = asyncio.Event()
 
-            ib.disconnectedEvent += _on_disconnect
+                def _on_disconnect(_e=ev):
+                    self._loop.call_soon_threadsafe(_e.set)
 
-            try:
-                log.info("Connecting to IB Gateway at %s:%d (attempt %d) …",
-                         self._host, self._port, self._conn_attempt + 1)
-                await ib.connectAsync(
-                    self._host, self._port,
-                    clientId=self._client_id,
-                    timeout=15,
-                    readonly=self._readonly,
+                ib.disconnectedEvent += _on_disconnect
+
+                try:
+                    log.info("Connecting to IBKR at %s:%d (attempt %d) …",
+                             self._host, port, self._conn_attempt + 1)
+                    await ib.connectAsync(
+                        self._host, port,
+                        clientId=self._client_id,
+                        timeout=15,
+                        readonly=self._readonly,
+                    )
+                    connected_ib = ib
+                    disc_event   = ev
+                    on_disc      = _on_disconnect
+                    log.info("Connected to IBKR on port %d ✓", port)
+                    break
+                except asyncio.CancelledError:
+                    ib.disconnectedEvent -= _on_disconnect
+                    try:
+                        ib.disconnect()
+                    except Exception:
+                        pass
+                    raise
+                except Exception as e:
+                    log.info("Port %d unavailable: %s", port, e)
+                    ib.disconnectedEvent -= _on_disconnect
+                    try:
+                        ib.disconnect()
+                    except Exception:
+                        pass
+
+            if connected_ib is None:
+                self._conn_attempt += 1
+                delay = min(
+                    _BASE_BACKOFF * (2 ** min(self._conn_attempt, 8)),
+                    _MAX_BACKOFF,
                 )
-                self._ib           = ib
-                self._connected    = True
-                self._conn_attempt = 0   # reset back-off counter on success
-                log.info("Connected to IB Gateway ✓")
+                log.warning("No IBKR port responded; retrying in %ds …", delay)
+                await self._sleep_or_retry(delay)
+                continue
 
-                # Stay connected; heartbeat until disconnected
-                await self._heartbeat_loop(ib, disc_event)
-                log.warning("Disconnected from IB Gateway")
-
+            self._ib           = connected_ib
+            self._connected    = True
+            self._conn_attempt = 0
+            try:
+                await self._heartbeat_loop(connected_ib, disc_event)
+                log.warning("Disconnected from IBKR")
             except asyncio.CancelledError:
                 raise
-            except Exception as e:
-                log.warning("Connection failed: %s", e)
-                self._conn_attempt += 1
-
             finally:
                 self._connected = False
                 self._ib        = None
-                ib.disconnectedEvent -= _on_disconnect
+                if on_disc is not None:
+                    connected_ib.disconnectedEvent -= on_disc
                 try:
-                    ib.disconnect()
+                    connected_ib.disconnect()
                 except Exception:
                     pass
 
@@ -146,7 +220,7 @@ class _IBKRConnection:
                 _MAX_BACKOFF,
             )
             log.info("Reconnecting in %ds …", delay)
-            await asyncio.sleep(delay)
+            await self._sleep_or_retry(delay)
 
     async def _heartbeat_loop(self, ib: IB, disc_event: asyncio.Event):
         """
@@ -247,7 +321,8 @@ class _IBKRConnection:
 
         if not contracts:
             account['daily_pnl'] = 0.0
-            return {'positions': positions, 'market_data': {}, 'div_data': {}, 'account': account}
+            return {'positions': positions, 'market_data': {}, 'div_data': {},
+                    'trades': [], 'account': account}
 
         # Request delayed market data type once (sync, fast) before parallel fetches
         try:
@@ -309,6 +384,34 @@ class _IBKRConnection:
                 log.warning("EUR/USD rate fetch failed, using fallback 1.08: %s", e)
             return None
 
+        # Chain E: recent trade executions (IBKR server caps history at ~7 days)
+        async def _fetch_trades():
+            try:
+                filt = ExecutionFilter()
+                filt.time = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d-%H:%M:%S')
+                fills = await ib.reqExecutionsAsync(filt)
+                result = []
+                for f in fills:
+                    try:
+                        shares = float(f.execution.shares)
+                        price  = float(f.execution.price)
+                        result.append({
+                            'ticker': f.contract.symbol,
+                            'side':   'BUY' if f.execution.side == 'BOT' else 'SELL',
+                            'shares': shares,
+                            'price':  round(price, 4),
+                            'time':   f.execution.time.isoformat() if f.execution.time else None,
+                            'value':  round(shares * price, 2),
+                        })
+                    except Exception:
+                        continue
+                result.sort(key=lambda x: x['time'] or '')
+                log.debug("Fetched %d trade fills", len(result))
+                return result
+            except Exception as e:
+                log.warning("Trade history fetch failed: %s", e)
+                return []
+
         # Chain D: daily P&L
         async def _fetch_pnl():
             try:
@@ -323,11 +426,12 @@ class _IBKRConnection:
                 log.warning("Daily P&L fetch failed: %s", e)
                 return 0.0
 
-        raw_tickers, div_data, fx_rate, daily_pnl = await asyncio.gather(
+        raw_tickers, div_data, fx_rate, daily_pnl, trades = await asyncio.gather(
             _fetch_tickers(),
             _fetch_dividends(),
             _fetch_fx(),
             _fetch_pnl(),
+            _fetch_trades(),
         )
 
         # ── Assemble market_data from tickers ─────────────────────────────────
@@ -356,6 +460,7 @@ class _IBKRConnection:
             'positions':   positions,
             'market_data': market_data,
             'div_data':    div_data if isinstance(div_data, dict) else {},
+            'trades':      trades if isinstance(trades, list) else [],
             'account':     account,
         }
 
@@ -383,3 +488,8 @@ def fetch_all_data() -> dict | None:
 
 def connection_status() -> str:
     return _conn.status
+
+
+def request_retry():
+    """Ask the background thread to attempt reconnecting immediately."""
+    _conn.request_retry()

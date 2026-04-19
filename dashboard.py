@@ -1,10 +1,9 @@
 import logging
-import os
 import time
 import dash
 from dash import dcc, html, no_update, dash_table
 from dash.dependencies import Input, Output, State
-from dash import ctx
+from dash import ctx, ALL
 from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor
 import plotly.graph_objects as go
@@ -12,12 +11,15 @@ import plotly.express as px
 import pandas as pd
 import io
 from config import cfg
-from ibkr_client import fetch_all_data, connection_status
+from ibkr_client import fetch_all_data, connection_status, request_retry
 from data_processor import process_positions, get_summary
 from analytics import get_dividend_data_yf
-from ai_analyst import analyse_portfolio, chat_portfolio, analyse_position
 from market_intel import (get_sector_geo,
-                           get_earnings_data)
+                           get_earnings_data,
+                           get_price_history)
+from trade_history import (parse_activity_csv,
+                           save_uploaded_trades, load_uploaded_trades,
+                           clear_uploaded_trades)
 from market_valuation import (get_buffett_indicator, get_sp500_pe,
                                get_shiller_cape, get_treasury_yield,
                                buffett_zone, pe_zone, cape_zone)
@@ -26,12 +28,27 @@ log = logging.getLogger(__name__)
 
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 
+# Startup grace period: during the first ~25 s after launch we show a
+# "Connecting …" spinner instead of "Disconnected" — the IB thread needs a
+# few seconds to establish its socket, and up to ~15 s per port if it has
+# to fall through to a second candidate. Once we've connected successfully
+# at least once, we drop the grace period and report the real status.
+_APP_START        = time.time()
+_STARTUP_GRACE_S  = 25
+_EVER_CONNECTED   = False
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def to_eur(usd, rate):
     return usd / rate if rate else usd
 
 CARD = {'border': '0.5px solid #ebebeb', 'borderRadius': '14px', 'padding': '24px'}
+
+_LINK_STYLE = {
+    'fontSize': '13px', 'color': '#378ADD', 'textDecoration': 'none',
+    'padding': '5px 12px', 'border': '1px solid #cfe0f5', 'borderRadius': '8px',
+    'fontWeight': '500', 'transition': 'background 0.15s ease',
+}
 
 def section_label(text):
     return html.P(text, style={
@@ -105,6 +122,18 @@ app.layout = html.Div([
     # Status / loading banner (hidden when data loaded)
     html.Div(id='status-banner', style={'marginBottom': '24px'}),
 
+    # Retry-connection button — shown only when status='disconnected'.
+    # Lives in the static layout so its callback always registers.
+    html.Div(
+        html.Button("↻ Retry connection", id='retry-connection-btn', n_clicks=0, style={
+            'fontSize': '14px', 'fontWeight': '500', 'color': '#fff',
+            'background': '#dc2626', 'border': 'none', 'borderRadius': '8px',
+            'padding': '10px 22px', 'cursor': 'pointer',
+        }),
+        id='retry-connection-wrap',
+        style={'display': 'none', 'textAlign': 'center', 'marginBottom': '24px'},
+    ),
+
     # 4 summary cards
     html.Div(id='summary-cards', style={
         'display': 'grid', 'gridTemplateColumns': 'repeat(4, 1fr)',
@@ -130,7 +159,7 @@ app.layout = html.Div([
         html.Div([
             section_label("Allocation"),
             dcc.Graph(id='donut-chart', config={'displayModeBar': False}, style={'height': '260px'}),
-        ], style={**CARD, 'width': '260px', 'display': 'flex', 'flexDirection': 'column', 'justifyContent': 'center'}),
+        ], style={**CARD, 'width': '260px', 'display': 'flex', 'flexDirection': 'column', 'justifyContent': 'flex-start'}),
     ], style={'display': 'flex', 'gap': '14px'}),
 
     # Position detail panel (shown on row click)
@@ -145,8 +174,7 @@ app.layout = html.Div([
             'fontSize': '15px', 'color': '#888', 'margin': '0 0 4px',
             'textTransform': 'uppercase', 'letterSpacing': '0.07em', 'fontWeight': '600',
         }),
-        html.P("Sector & geography · Earnings · Dividends · "
-               "Historical scenarios",
+        html.P("Sector & geography ",
                style={'fontSize': '15px', 'color': '#888', 'margin': '0'}),
     ], style={
         'marginTop': '40px', 'paddingTop': '32px',
@@ -173,100 +201,6 @@ app.layout = html.Div([
         'marginTop': '32px', 'paddingTop': '28px',
         'borderTop': '0.5px solid #f0f0f0',
     }),
-
-    # AI analysis + chat
-    html.Div([
-        # Header row
-        html.Div([
-            html.Div([
-                section_label("AI Analysis"),
-                html.Span("Click a chip or type a question below.",
-                          style={'fontSize': '14px', 'color': '#888',
-                                 'marginTop': '-12px', 'display': 'block',
-                                 'marginBottom': '6px', 'lineHeight': '1.5',
-                                 'maxWidth': '480px'}),
-                html.Span(
-                    "Powered by Claude" if os.environ.get('ANTHROPIC_API_KEY')
-                    else "Built-in analysis · set ANTHROPIC_API_KEY for Claude AI",
-                    style={'fontSize': '13px', 'color': '#bbb',
-                           'display': 'block', 'marginBottom': '17px'},
-                ),
-            ]),
-            html.Button("Clear chat", id='chat-clear-btn', n_clicks=0, style={
-                'background': 'none', 'border': '1px solid #e8e8e8',
-                'borderRadius': '8px', 'padding': '6px 14px',
-                'fontSize': '13px', 'cursor': 'pointer', 'color': '#aaa',
-                'fontFamily': 'inherit',
-            }),
-        ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-start'}),
-
-        # Quick-action chips — "Analyse Portfolio" is the primary action
-        html.Div([
-            html.Button("✦ Analyse Portfolio",
-                        id={'type': 'chip-btn', 'index': '__analyse__'},
-                        n_clicks=0, style={
-                            'background': '#378ADD', 'border': 'none',
-                            'borderRadius': '16px', 'padding': '5px 16px',
-                            'fontSize': '13px', 'cursor': 'pointer', 'color': '#fff',
-                            'fontFamily': 'inherit', 'fontWeight': '500',
-                            'marginRight': '8px', 'marginBottom': '8px',
-                        }),
-            *[html.Button(label, id={'type': 'chip-btn', 'index': question},
-                          n_clicks=0, style={
-                              'background': '#f5f5f5', 'border': '1px solid #e8e8e8',
-                              'borderRadius': '16px', 'padding': '5px 14px',
-                              'fontSize': '13px', 'cursor': 'pointer', 'color': '#444',
-                              'fontFamily': 'inherit', 'marginRight': '8px',
-                              'marginBottom': '8px',
-                          })
-              for label, question in [
-                  ("Biggest risk",       "What is my biggest risk?"),
-                  ("Best performer",     "What is my best performer?"),
-                  ("Should I rebalance?","Should I rebalance my portfolio?"),
-                  ("Today's P&L",       "What is today's P&L?"),
-                  ("Cash position",     "How much cash do I have?"),
-                  ("Sector exposure",   "What sectors do I hold?"),
-                  ("Earnings soon?",    "Any upcoming earnings in my portfolio?"),
-                  ("Worst performer",   "What is my worst performer?"),
-              ]
-            ],
-        ], style={'display': 'flex', 'flexWrap': 'wrap', 'alignItems': 'center',
-                  'marginBottom': '14px'}),
-
-        # Chat thread — wrapped in Loading so a spinner appears during AI calls
-        dcc.Loading(
-            html.Div(id='chat-thread', style={
-                'maxHeight': '380px', 'overflowY': 'auto',
-                'display': 'flex', 'flexDirection': 'column', 'gap': '10px',
-                'marginBottom': '14px',
-            }),
-            type='dot', color='#378ADD',
-            style={'minHeight': '20px'},
-        ),
-
-        # Chat input row
-        html.Div([
-            dcc.Input(
-                id='chat-input',
-                type='text',
-                placeholder='Ask anything about your portfolio…',
-                debounce=False,
-                n_submit=0,
-                style={
-                    'flex': '1', 'border': '1px solid #e8e8e8', 'borderRadius': '8px',
-                    'padding': '9px 14px', 'fontSize': '14px', 'fontFamily': 'inherit',
-                    'outline': 'none', 'color': '#111',
-                },
-            ),
-            html.Button("Send", id='chat-send-btn', n_clicks=0, style={
-                'background': '#111', 'border': 'none', 'borderRadius': '8px',
-                'padding': '9px 18px', 'fontSize': '14px', 'cursor': 'pointer',
-                'color': '#fff', 'fontFamily': 'inherit', 'marginLeft': '8px',
-                'fontWeight': '500',
-            }),
-        ], style={'display': 'flex', 'alignItems': 'center'}),
-
-    ], style={**CARD, 'marginTop': '24px'}),
 
     # ── Toast notification container ──────────────────────────────────────────
     # Fixed to the bottom-right corner; pointer-events:none so it never blocks
@@ -297,7 +231,8 @@ app.layout = html.Div([
     dcc.Store(id='valuation-data'),         # macro valuation indicators, 4-h cache
     dcc.Store(id='connection-status', data='loading'),
     dcc.Store(id='selected-ticker', data=None),
-    dcc.Store(id='chat-history', data=[]),
+    dcc.Store(id='selected-period', data='1M'),
+    dcc.Store(id='uploaded-trades', data=load_uploaded_trades()),
 
 ], id='app-root', style={
     'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -360,10 +295,18 @@ app.clientside_callback(
     Input('kb-refresh-btn', 'n_clicks'),       # triggered when user presses R
 )
 def fetch_data(*_):
+    global _EVER_CONNECTED
     raw = fetch_all_data()
     if not raw or not raw['positions']:
-        status = 'no_positions' if (raw is not None) else connection_status()
-        return {}, status
+        if raw is not None:
+            _EVER_CONNECTED = True
+            return {}, 'no_positions'
+        real = connection_status()
+        if real != 'connected' and not _EVER_CONNECTED \
+                and (time.time() - _APP_START) < _STARTUP_GRACE_S:
+            return {}, 'connecting'
+        return {}, real
+    _EVER_CONNECTED = True
     df = process_positions(raw['positions'], raw.get('market_data', {}))
     if df.empty:
         return {}, 'no_positions'
@@ -388,31 +331,62 @@ def fetch_data(*_):
     Output('status-banner', 'children'),
     Output('connection-badge', 'children'),
     Output('last-updated', 'children'),
+    Output('retry-connection-wrap', 'style'),
     Input('connection-status', 'data'),
     Input('portfolio-data', 'data'),
 )
 def update_status(status, data):
     ts = f"Updated {datetime.now().strftime('%H:%M:%S')}"
+    retry_hidden = {'display': 'none', 'textAlign': 'center', 'marginBottom': '24px'}
+    retry_shown  = {'display': 'block', 'textAlign': 'center', 'marginBottom': '24px'}
 
-    if status == 'loading':
-        return status_banner("⏳", "Connecting to IBKR...",
-                             "Fetching your portfolio data. This takes a few seconds.", '#fafafa'), \
-               badge("Connecting...", '#888', '#f5f5f5', '#e0e0e0'), ""
+    if status in ('loading', 'connecting'):
+        spinner = html.Div(className='ibkr-spinner', style={
+            'width': '44px', 'height': '44px', 'margin': '0 auto 18px',
+            'border': '4px solid #e5e7eb', 'borderTop': '4px solid #16a34a',
+            'borderRadius': '50%',
+        })
+        title = "Starting dashboard..." if status == 'loading' else "Connecting to IBKR..."
+        body  = ("Loading your portfolio. This takes a few seconds."
+                 if status == 'loading'
+                 else "Reaching IB Gateway / TWS. Trying all common ports — this takes up to 20 seconds.")
+        banner = html.Div([
+            spinner,
+            html.P(title, style={'fontSize': '17px', 'fontWeight': '600',
+                                 'color': '#111', 'margin': '0 0 6px'}),
+            html.P(body, style={'fontSize': '15px', 'color': '#888',
+                                'margin': '0', 'lineHeight': '1.6'}),
+        ], style={'textAlign': 'center', 'padding': '48px 32px',
+                  'background': '#fafafa', 'borderRadius': '14px',
+                  'border': '0.5px solid #ebebeb'})
+        return banner, badge("Connecting...", '#888', '#f5f5f5', '#e0e0e0'), "", retry_hidden
 
     if status == 'disconnected':
         return status_banner("🔌", "Not connected to IBKR",
-                             "Make sure IB Gateway or TWS is open and logged in — the dashboard reconnects automatically.\n"
-                             "IB Gateway: Configure → Settings → API → Settings → Enable ActiveX and Socket Clients → Port 4002 (paper) / 4001 (live).\n"
-                             "TWS: Edit → Global Configuration → API → Settings → Enable ActiveX and Socket Clients → Port 7497 (paper) / 7496 (live).",
+                             "Make sure IB Gateway or TWS is open and logged in — the dashboard auto-detects the port and reconnects automatically.\n"
+                             "IB Gateway: Configure → Settings → API → Settings → Enable ActiveX and Socket Clients (Port 4002 paper / 4001 live).\n"
+                             "TWS: Edit → Global Configuration → API → Settings → Enable ActiveX and Socket Clients (Port 7497 paper / 7496 live).",
                              '#fef2f2'), \
-               badge("● Disconnected", '#dc2626', '#fef2f2', '#fecaca'), ts
+               badge("● Disconnected", '#dc2626', '#fef2f2', '#fecaca'), ts, retry_shown
 
     if status == 'no_positions':
         return status_banner("📭", "No positions found",
                              "Connected to IBKR successfully, but your account has no open positions.", '#fafafa'), \
-               badge("● Connected", '#16a34a', '#f0fdf4', '#bbf7d0'), ts
+               badge("● Connected", '#16a34a', '#f0fdf4', '#bbf7d0'), ts, retry_hidden
 
-    return None, badge(f"● Live · {_REFRESH_MS // 1000}s", '#16a34a', '#f0fdf4', '#bbf7d0'), ts
+    return None, badge(f"● Live · {_REFRESH_MS // 1000}s", '#16a34a', '#f0fdf4', '#bbf7d0'), ts, retry_hidden
+
+
+@app.callback(
+    Output('connection-status', 'data', allow_duplicate=True),
+    Input('retry-connection-btn', 'n_clicks'),
+    prevent_initial_call=True,
+)
+def retry_connection(n_clicks):
+    if not n_clicks:
+        return no_update
+    request_retry()
+    return 'connecting'
 
 
 # ── Summary cards ──────────────────────────────────────────────────────────────
@@ -743,20 +717,31 @@ def export_pdf(_, data):
 
 @app.callback(
     Output('selected-ticker', 'data'),
+    Output('holdings-datatable', 'active_cell'),
+    Output('holdings-datatable', 'selected_cells'),
     Input('holdings-datatable', 'active_cell'),
     Input('kb-escape-btn', 'n_clicks'),   # triggered when user presses Escape
+    Input({'type': 'position-close', 'index': ALL}, 'n_clicks'),
     State('holdings-datatable', 'data'),
     State('selected-ticker', 'data'),
     prevent_initial_call=True,
 )
-def select_ticker(active_cell, _, table_data, current):
-    # Escape key: always close the detail panel regardless of what's selected.
-    if ctx.triggered_id == 'kb-escape-btn':
-        return None
+def select_ticker(active_cell, _esc, close_clicks, table_data, current):
+    trig = ctx.triggered_id
+    # Escape key or ✕ close button: always close the detail panel and clear
+    # the DataTable's active-cell highlight so the row doesn't stay tinted.
+    if trig == 'kb-escape-btn':
+        return None, None, []
+    if isinstance(trig, dict) and trig.get('type') == 'position-close':
+        if not any(close_clicks or []):
+            return no_update, no_update, no_update
+        return None, None, []
     if not active_cell or not table_data:
-        return no_update
+        return no_update, no_update, no_update
     ticker = table_data[active_cell['row']]['ticker']
-    return None if current == ticker else ticker
+    if current == ticker:
+        return None, None, []
+    return ticker, no_update, no_update
 
 
 def _range_bar(low, high, current):
@@ -783,11 +768,12 @@ def _range_bar(low, high, current):
             }),
         ], style={'position': 'relative', 'height': '14px', 'margin': '8px 0'}),
         html.Div([
-            html.Span(f"${low:,.2f}", style={'fontSize': '13px', 'color': '#aaa'}),
+            html.Span(f"${low:,.2f}", style={'fontSize': '13px', 'color': '#555', 'fontWeight': '500'}),
             html.Span(f"{pct:.0f}% of range",
-                      style={'fontSize': '13px', 'color': '#aaa', 'position': 'absolute',
+                      style={'fontSize': '13px', 'color': '#555', 'fontWeight': '500',
+                             'position': 'absolute',
                              'left': '50%', 'transform': 'translateX(-50%)'}),
-            html.Span(f"${high:,.2f}", style={'fontSize': '13px', 'color': '#aaa'}),
+            html.Span(f"${high:,.2f}", style={'fontSize': '13px', 'color': '#555', 'fontWeight': '500'}),
         ], style={'display': 'flex', 'justifyContent': 'space-between', 'position': 'relative'}),
     ])
 
@@ -795,22 +781,159 @@ def _range_bar(low, high, current):
 def _stat(label, value, accent=None):
     return html.Div([
         html.P(label, style={
-            'fontSize': '12px', 'color': '#bbb', 'margin': '0 0 4px',
+            'fontSize': '13px', 'color': '#555', 'margin': '0 0 4px',
             'textTransform': 'uppercase', 'letterSpacing': '0.05em',
+            'fontWeight': '600',
         }),
         html.P(value, style={
-            'fontSize': '16px', 'fontWeight': '500', 'margin': '0',
+            'fontSize': '17px', 'fontWeight': '600', 'margin': '0',
             'color': accent or '#111',
         }),
     ], style={'minWidth': '90px'})
 
 
+_PERIOD_CHOICES = ['1M', '3M', '1Y', '3Y', '5Y']
+_PERIOD_TO_YF   = {'1M': '1mo', '3M': '3mo', '1Y': '1y', '3Y': '3y', '5Y': '5y'}
+
+
+def _period_btn(label, active):
+    return html.Button(label, id={'type': 'period-btn', 'index': label},
+                       n_clicks=0, style={
+        'background': '#378ADD' if active else 'transparent',
+        'color':      '#fff'    if active else '#555',
+        'border':     '1px solid ' + ('#378ADD' if active else '#ddd'),
+        'borderRadius': '6px', 'padding': '4px 12px',
+        'fontSize': '12px', 'cursor': 'pointer',
+        'fontFamily': 'inherit', 'fontWeight': '500',
+    })
+
+
+def _build_price_sparkline(ticker, period, avg_cost, trades=None):
+    yf_period = _PERIOD_TO_YF.get(period, '1mo')
+    try:
+        hist = get_price_history([ticker], yf_period)
+    except Exception as e:
+        log.debug('sparkline fetch failed for %s: %s', ticker, e)
+        hist = {}
+    data_h = hist.get(ticker) or {}
+    prices = data_h.get('prices') or []
+    dates  = data_h.get('dates')  or []
+    if len(prices) < 2:
+        return html.P('Chart data unavailable for this period.',
+                      style={'color': '#555', 'fontSize': '14px', 'fontWeight': '500',
+                             'textAlign': 'center', 'margin': '24px 0 8px'})
+
+    first, last = prices[0], prices[-1]
+    up = last >= first
+    line_color = '#16a34a' if up else '#dc2626'
+    fill_color = 'rgba(22,163,74,0.08)' if up else 'rgba(220,38,38,0.08)'
+
+    fig = go.Figure(go.Scatter(
+        x=dates, y=prices, mode='lines',
+        line=dict(color=line_color, width=2),
+        fill='tozeroy', fillcolor=fill_color,
+        hovertemplate='%{x}<br>$%{y:,.2f}<extra></extra>',
+    ))
+    # Average cost reference line (if we know it and it's within chart range)
+    if avg_cost and avg_cost == avg_cost and avg_cost > 0:
+        lo, hi = min(prices), max(prices)
+        if lo * 0.6 <= avg_cost <= hi * 1.4:
+            fig.add_hline(y=avg_cost, line=dict(color='#555', width=1, dash='dot'),
+                          annotation_text=f'Avg ${avg_cost:,.2f}',
+                          annotation_position='top left',
+                          annotation=dict(font=dict(size=12, color='#333')))
+
+    # Trade markers (BUY ▲ green / SELL ▼ red) on trades whose date falls
+    # within the plotted window.  `dates` are 'YYYY-MM-DD' strings.
+    if trades and dates:
+        date_set = set(dates)
+        buys_x,  buys_y,  buys_hover  = [], [], []
+        sells_x, sells_y, sells_hover = [], [], []
+        for t in trades:
+            tm = (t.get('time') or '')[:10]
+            if not tm or tm not in date_set:
+                continue
+            try:
+                y = prices[dates.index(tm)]
+            except ValueError:
+                continue
+            side   = (t.get('side') or '').upper()
+            shares = t.get('shares') or 0
+            price_ = t.get('price') or 0
+            hover  = f"{side} {shares:g} @ ${price_:,.2f}<br>{tm}"
+            if side == 'BUY':
+                buys_x.append(tm);  buys_y.append(y);  buys_hover.append(hover)
+            elif side == 'SELL':
+                sells_x.append(tm); sells_y.append(y); sells_hover.append(hover)
+        if buys_x:
+            fig.add_trace(go.Scatter(
+                x=buys_x, y=buys_y, mode='markers', name='BUY',
+                marker=dict(symbol='triangle-up', color='#16a34a',
+                            size=24, line=dict(color='#fff', width=1)),
+                hovertext=buys_hover, hoverinfo='text',
+            ))
+        if sells_x:
+            fig.add_trace(go.Scatter(
+                x=sells_x, y=sells_y, mode='markers', name='SELL',
+                marker=dict(symbol='triangle-down', color='#dc2626',
+                            size=24, line=dict(color='#fff', width=1)),
+                hovertext=sells_hover, hoverinfo='text',
+            ))
+    pct_change = (last - first) / first * 100 if first else 0
+    # Zoom y-axis to the actual price range with a small padding, and also
+    # include avg_cost if it's on-chart so the dotted reference line stays
+    # visible.  Without this, fill='tozeroy' anchors the axis at 0 and small
+    # real ranges (e.g. $15→$17) render as a nearly-flat line.
+    y_lo, y_hi = min(prices), max(prices)
+    if avg_cost and avg_cost > 0 and y_lo * 0.6 <= avg_cost <= y_hi * 1.4:
+        y_lo = min(y_lo, avg_cost)
+        y_hi = max(y_hi, avg_cost)
+    pad = (y_hi - y_lo) * 0.15 or y_hi * 0.02 or 1.0
+    fig.update_layout(
+        margin=dict(l=8, r=8, t=8, b=8), height=200,
+        xaxis=dict(showgrid=False, showticklabels=False, title=None),
+        yaxis=dict(showgrid=True, gridcolor='#f2f2f2', title=None,
+                   tickfont=dict(size=12, color='#555'),
+                   range=[y_lo - pad, y_hi + pad]),
+        plot_bgcolor='#fff', paper_bgcolor='rgba(0,0,0,0)',
+        showlegend=False,
+        hoverlabel=dict(bgcolor='#fff', bordercolor='#378ADD',
+                        font=dict(size=14, color='#111', family='Inter, system-ui, sans-serif')),
+    )
+    summary_line = html.Div([
+        html.Span(f"{period} ", style={'color': '#555', 'fontSize': '13px',
+                                        'fontWeight': '500',
+                                        'letterSpacing': '0.05em'}),
+        html.Span(f"{'+' if pct_change >= 0 else ''}{pct_change:.2f}%",
+                  style={'color': line_color, 'fontSize': '13px',
+                         'fontWeight': '600', 'marginLeft': '4px'}),
+    ], style={'textAlign': 'right', 'marginTop': '2px'})
+    return html.Div([
+        dcc.Graph(figure=fig, config={'displayModeBar': False}),
+        summary_line,
+    ])
+
+
+@app.callback(
+    Output('selected-period', 'data'),
+    Input({'type': 'period-btn', 'index': ALL}, 'n_clicks'),
+    prevent_initial_call=True,
+)
+def update_selected_period(_):
+    tid = ctx.triggered_id
+    if isinstance(tid, dict) and tid.get('type') == 'period-btn':
+        return tid.get('index') or no_update
+    return no_update
+
+
 @app.callback(
     Output('position-detail', 'children'),
     Input('selected-ticker', 'data'),
+    Input('selected-period', 'data'),
+    Input('uploaded-trades', 'data'),
     State('portfolio-data', 'data'),
 )
-def show_position_detail(ticker, data):
+def show_position_detail(ticker, period, uploaded, data):
     if not ticker or not data or 'positions' not in data:
         return None
     df = pd.DataFrame(data['positions'])
@@ -822,35 +945,42 @@ def show_position_detail(ticker, data):
     price        = r['current_price']
     daily_chg    = r.get('daily_change')
     daily_chg_pct = r.get('daily_change_pct')
-    vwap         = r.get('vwap')
-    spread       = r.get('spread')
     low_52w      = r.get('low_52w')
     high_52w     = r.get('high_52w')
-    volume       = r.get('volume')
 
     # Daily change header
     if daily_chg is not None and daily_chg == daily_chg:
         chg_color = '#16a34a' if daily_chg >= 0 else '#dc2626'
         chg_str   = f"{'▲' if daily_chg >= 0 else '▼'} ${abs(daily_chg):,.2f}  ({daily_chg_pct:+.2f}%)"
     else:
-        chg_color, chg_str = '#bbb', '—'
+        chg_color, chg_str = '#555', '—'
 
-    # VWAP vs price
-    if vwap and vwap == vwap:
-        vwap_diff  = price - vwap
-        vwap_color = '#16a34a' if vwap_diff >= 0 else '#dc2626'
-        vwap_str   = f"${vwap:,.2f}  ({vwap_diff:+.2f})"
+    qty       = r.get('quantity') or 0
+    mkt_val   = r.get('market_value')
+    unreal    = r.get('unrealized_pnl')
+    avg_cost  = r.get('avg_cost')
+
+    if avg_cost and avg_cost == avg_cost and avg_cost > 0:
+        cost_diff_pct = (price - avg_cost) / avg_cost * 100
+        cost_color = '#16a34a' if cost_diff_pct >= 0 else '#dc2626'
+        cost_str   = f"${avg_cost:,.2f}  ({cost_diff_pct:+.2f}%)"
     else:
-        vwap_color, vwap_str = '#bbb', '—'
+        cost_color, cost_str = '#555', '—'
 
-    spread_str = f"${spread:,.4f}" if spread and spread == spread else '—'
-    vol_str    = f"{int(volume):,}"  if volume and volume == volume else '—'
+    qty_str    = f"{qty:,.0f}" if qty else '—'
+    mkt_str    = f"${mkt_val:,.2f}" if mkt_val is not None else '—'
+    if unreal is not None:
+        unreal_color = '#16a34a' if unreal >= 0 else '#dc2626'
+        unreal_str   = f"${unreal:+,.2f}"
+    else:
+        unreal_color, unreal_str = '#555', '—'
 
     stats = html.Div([
+        _stat("Quantity", qty_str),
+        _stat("Avg Cost", cost_str, cost_color),
+        _stat("Market Value", mkt_str),
+        _stat("Unrealized P&L", unreal_str, unreal_color),
         _stat("Daily Change", chg_str, chg_color),
-        _stat("VWAP", vwap_str, vwap_color),
-        _stat("Spread", spread_str),
-        _stat("Volume", vol_str),
     ], style={'display': 'flex', 'gap': '32px', 'flexWrap': 'wrap', 'marginTop': '17px'})
 
     # 52-week range
@@ -858,16 +988,77 @@ def show_position_detail(ticker, data):
             and high_52w > low_52w):
         range_section = html.Div([
             html.P("52-Week Range", style={
-                'fontSize': '12px', 'color': '#bbb', 'margin': '0 0 0',
+                'fontSize': '13px', 'color': '#555', 'margin': '0 0 0',
                 'textTransform': 'uppercase', 'letterSpacing': '0.05em',
+                'fontWeight': '600',
             }),
             _range_bar(low_52w, high_52w, price),
         ], style={'marginTop': '17px'})
     else:
         range_section = None
 
+    # Collect trades for this ticker from live fills + uploaded CSV history.
+    live_trades = (data.get('trades') or []) if isinstance(data, dict) else []
+    all_trades  = list(uploaded or []) + list(live_trades)
+    ticker_trades = [t for t in all_trades if (t.get('ticker') or '') == ticker]
+
+    # Price history chart with period toggle + CSV upload button
+    sel_period = period if period in _PERIOD_CHOICES else '1M'
+    upload_btn = dcc.Upload(
+        id={'type': 'position-trade-upload', 'index': 0},
+        accept='.csv',
+        multiple=False,
+        children=html.Span("Upload trades CSV", style={
+            'background': 'transparent', 'color': '#378ADD',
+            'border': '1px solid #cfe0f5', 'borderRadius': '6px',
+            'padding': '4px 10px', 'fontSize': '12px',
+            'cursor': 'pointer', 'fontWeight': '500',
+        }),
+    )
+    upload_help = html.Details([
+        html.Summary("How to export from IBKR ▸", style={
+            'cursor': 'pointer', 'color': '#378ADD', 'fontSize': '13px',
+            'fontWeight': '600', 'marginTop': '6px',
+        }),
+        html.Ol([
+            html.Li("Log in to the IBKR Client Portal."),
+            html.Li("Go to Performance & Reports → Transaction History."),
+            html.Li("Pick a date range and click the CSV / download icon."),
+            html.Li("Drop the .csv file on the upload button above."),
+        ], style={'fontSize': '13px', 'color': '#333', 'lineHeight': '1.7',
+                  'fontWeight': '500',
+                  'paddingLeft': '20px', 'margin': '6px 0 0'}),
+    ])
+    trade_count_note = (
+        f"{len(ticker_trades)} trade{'s' if len(ticker_trades)!=1 else ''} plotted"
+        if ticker_trades else "No trades on file for this ticker yet."
+    )
+    chart_section = html.Div([
+        html.Div([
+            html.P("Price History", style={
+                'fontSize': '14px', 'color': '#555', 'margin': '0',
+                'textTransform': 'uppercase', 'letterSpacing': '0.05em',
+                'fontWeight': '600',
+            }),
+            html.Div([
+                upload_btn,
+                html.Div([_period_btn(p, p == sel_period) for p in _PERIOD_CHOICES],
+                         style={'display': 'flex', 'gap': '4px'}),
+            ], style={'display': 'flex', 'gap': '8px', 'alignItems': 'center'}),
+        ], style={'display': 'flex', 'justifyContent': 'space-between',
+                  'alignItems': 'center', 'marginBottom': '6px'}),
+        _build_price_sparkline(ticker, sel_period, avg_cost, ticker_trades),
+        html.Div([
+            html.Span(trade_count_note, style={'fontSize': '13px', 'color': '#555', 'fontWeight': '500'}),
+            html.Div(id={'type': 'position-upload-status', 'index': 0},
+                     style={'fontSize': '12px'}),
+        ], style={'display': 'flex', 'justifyContent': 'space-between',
+                  'alignItems': 'center', 'marginTop': '2px'}),
+        upload_help,
+    ], style={'marginTop': '20px'})
+
     return html.Div([
-        # Header row: ticker + price + daily change + AI button
+        # Header row: ticker + price + daily change + quick links
         html.Div([
             html.Div([
                 html.Span(ticker, style={'fontWeight': '700', 'fontSize': '17px', 'color': '#111'}),
@@ -876,70 +1067,81 @@ def show_position_detail(ticker, data):
                 html.Span(chg_str,
                           style={'fontSize': '15px', 'color': chg_color, 'marginLeft': '12px'}),
             ], style={'display': 'flex', 'alignItems': 'center'}),
-            html.Button("✦ AI Analysis", id='position-ai-btn', n_clicks=0, style={
-                'background': 'transparent', 'border': '1px solid #378ADD',
-                'borderRadius': '8px', 'padding': '5px 14px',
-                'fontSize': '13px', 'cursor': 'pointer', 'color': '#378ADD',
-                'fontFamily': 'inherit', 'fontWeight': '500',
-            }),
+            html.Div([
+                html.A("Yahoo", href=f"https://finance.yahoo.com/quote/{ticker}",
+                       target='_blank', style=_LINK_STYLE),
+                html.A("TradingView", href=f"https://www.tradingview.com/symbols/{ticker}/",
+                       target='_blank', style=_LINK_STYLE),
+                html.Span("Esc", style={
+                    'fontSize': '13px', 'color': '#555',
+                    'padding': '5px 12px', 'border': '1px solid #cfe0f5',
+                    'borderRadius': '8px', 'background': '#fff',
+                    'fontWeight': '500', 'marginLeft': '8px',
+                }),
+                html.Button("✕ Close", id={'type': 'position-close', 'index': 0}, n_clicks=0, style={
+                    'fontSize': '13px', 'color': '#fff',
+                    'background': '#dc2626', 'border': '1px solid #dc2626',
+                    'borderRadius': '8px', 'padding': '5px 12px',
+                    'cursor': 'pointer', 'marginLeft': '4px', 'fontWeight': '500',
+                    'fontFamily': 'inherit',
+                }),
+            ], style={'display': 'flex', 'alignItems': 'center', 'gap': '6px'}),
         ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center'}),
         range_section,
         stats,
-        # AI output — populated by run_position_ai_analysis callback
-        html.Div(id='position-ai-output'),
+        chart_section,
     ], style={
         **CARD,
         'marginTop': '14px',
-        'background': '#fafafa',
+        'background': '#fff',
         'borderLeft': '3px solid #378ADD',
+        'animation': 'slideInDown 0.25s ease-out',
     })
 
 
-# ── Per-position AI analysis ──────────────────────────────────────────────────
+# ── Per-position CSV trade upload ─────────────────────────────────────────────
+# The upload button lives inside the opened position detail card.  The user
+# exports a Transaction History CSV from the IBKR Client Portal and drops it
+# here.  Parsed trades are persisted to data/uploaded_trades.json (the same
+# store used by the global trade history timeline) and plotted as BUY/SELL
+# arrows on the per-position price chart.
 
 @app.callback(
-    Output('position-ai-output', 'children'),
-    Input('position-ai-btn', 'n_clicks'),
-    State('selected-ticker', 'data'),
-    State('portfolio-data', 'data'),
-    State('market-intel-data', 'data'),
+    Output('uploaded-trades', 'data'),
+    Output({'type': 'position-upload-status', 'index': ALL}, 'children'),
+    Input({'type': 'position-trade-upload', 'index': ALL}, 'contents'),
+    State({'type': 'position-trade-upload', 'index': ALL}, 'filename'),
     prevent_initial_call=True,
 )
-def run_position_ai_analysis(_, ticker, portfolio_data, market_data):
-    if not ticker or not portfolio_data or not portfolio_data.get('positions'):
-        return None
+def handle_position_trade_upload(contents_list, filenames_list):
+    import base64
 
-    positions = portfolio_data['positions']
-    matches   = [p for p in positions if p.get('ticker') == ticker]
-    if not matches:
-        return None
+    contents = next((c for c in (contents_list or []) if c), None)
+    filename = next((f for f in (filenames_list or []) if f), None)
+    if not contents:
+        return no_update, [no_update for _ in (contents_list or [])]
 
-    position = matches[0]
-    text = analyse_position(
-        ticker=ticker,
-        position=position,
-        positions=positions,
-        summary=portfolio_data.get('summary', {}),
-        account=portfolio_data.get('account', {}),
-        market_data=market_data,
-    )
+    def _status(msg, color):
+        return html.Span(msg, style={'color': color, 'fontWeight': '500'})
 
-    using_claude = bool(os.environ.get('ANTHROPIC_API_KEY'))
-    label        = "✦ Claude" if using_claude else "✦ Built-in Analysis"
-    label_color  = '#378ADD' if using_claude else '#888'
+    if not (filename or '').lower().endswith('.csv'):
+        return no_update, [_status("Need a .csv file", '#dc2626')
+                           for _ in (contents_list or [])]
+    try:
+        _, b64 = contents.split(',', 1)
+        decoded = base64.b64decode(b64)
+    except Exception:
+        return no_update, [_status("Could not decode file", '#dc2626')
+                           for _ in (contents_list or [])]
 
-    paragraphs = [line.strip() for line in text.split('\n') if line.strip()]
+    parsed = parse_activity_csv(decoded)
+    if not parsed:
+        return no_update, [_status("No trades found in CSV", '#b45309')
+                           for _ in (contents_list or [])]
 
-    return html.Div([
-        html.Div([
-            html.Span(label, style={'color': label_color, 'fontWeight': '600', 'fontSize': '13px'}),
-            html.Span(f" · {ticker}", style={'color': '#888', 'fontSize': '13px'}),
-        ], style={'marginTop': '18px', 'paddingTop': '14px', 'borderTop': '0.5px solid #e8e8e8',
-                  'marginBottom': '10px'}),
-        *[html.P(p, style={'fontSize': '14px', 'lineHeight': '1.7', 'margin': '0 0 8px',
-                           'color': '#222'})
-          for p in paragraphs],
-    ])
+    merged = save_uploaded_trades(parsed)
+    msg = f"{len(parsed)} parsed · {len(merged)} total stored"
+    return merged, [_status(msg, '#16a34a') for _ in (contents_list or [])]
 
 
 # ── Dividends ─────────────────────────────────────────────────────────────────
@@ -1093,140 +1295,6 @@ def update_toast(*_):
     )
 
 
-# ── AI analysis ────────────────────────────────────────────────────────────────
-
-@app.callback(
-    Output('ai-analysis-output', 'children'),
-    Input('ai-analyse-btn', 'n_clicks'),
-    State('portfolio-data', 'data'),
-    State('market-intel-data', 'data'),
-    State('valuation-data', 'data'),
-    prevent_initial_call=True,
-)
-def run_ai_analysis(_, data, market_data, valuation_data):
-    if not data or not data.get('positions'):
-        return html.P(
-            "No portfolio data available — connect to IB Gateway or TWS and wait for the first refresh.",
-            style={'fontSize': '15px', 'color': '#bbb', 'margin': '16px 0 0'},
-        )
-
-    text = analyse_portfolio(
-        positions=data['positions'],
-        summary=data.get('summary', {}),
-        account=data.get('account', {}),
-        market_data=market_data,
-        valuation_data=valuation_data,
-    )
-
-    ts = datetime.now().strftime('%H:%M:%S')
-
-    # Split on newlines; render each non-empty line as its own paragraph
-    paragraphs = [line.strip() for line in text.split('\n') if line.strip()]
-
-    using_claude = bool(os.environ.get('ANTHROPIC_API_KEY'))
-    label = "✦ Claude" if using_claude else "✦ Built-in Analysis"
-    label_color = '#378ADD' if using_claude else '#888'
-
-    return html.Div([
-        html.Div([
-            html.Span(label, style={
-                'color': label_color, 'fontWeight': '600', 'fontSize': '14px',
-            }),
-            html.Span(f" · {ts}", style={'color': '#888', 'fontSize': '13px'}),
-        ], style={
-            'marginBottom': '17px', 'marginTop': '17px',
-            'paddingTop': '17px', 'borderTop': '0.5px solid #f0f0f0',
-        }),
-        *[html.P(p, style={
-            'fontSize': '15px', 'lineHeight': '1.75',
-            'margin': '0 0 10px', 'color': '#111',
-        }) for p in paragraphs],
-    ])
-
-
-# ── Portfolio chat ─────────────────────────────────────────────────────────────
-
-@app.callback(
-    Output('chat-thread', 'children'),
-    Output('chat-history', 'data'),
-    Output('chat-input', 'value'),
-    Input('chat-send-btn', 'n_clicks'),
-    Input('chat-input', 'n_submit'),
-    Input({'type': 'chip-btn', 'index': dash.ALL}, 'n_clicks'),
-    State('chat-input', 'value'),
-    State('chat-history', 'data'),
-    State('portfolio-data', 'data'),
-    State('market-intel-data', 'data'),
-    State('valuation-data', 'data'),
-    prevent_initial_call=True,
-)
-def handle_chat(send_clicks, input_submit, chip_clicks, question, history,
-                portfolio_data, market_data, valuation_data):
-    # Determine which input fired
-    triggered = ctx.triggered_id
-
-    # Chip button
-    if isinstance(triggered, dict) and triggered.get('type') == 'chip-btn':
-        question = triggered['index']
-    elif not question or not question.strip():
-        return no_update, no_update, no_update
-
-    question = question.strip()
-    history = history or []
-
-    if not portfolio_data or not portfolio_data.get('positions'):
-        answer = "No portfolio data available — connect to IB Gateway or TWS and wait for the first refresh."
-    else:
-        answer = chat_portfolio(
-            question=question,
-            history=history,
-            positions=portfolio_data['positions'],
-            summary=portfolio_data.get('summary', {}),
-            account=portfolio_data.get('account', {}),
-            market_data=market_data,
-            valuation_data=valuation_data,
-        )
-
-    # Update history (keep last 10 turns to stay within context limits)
-    history = history + [
-        {'role': 'user',      'content': question},
-        {'role': 'assistant', 'content': answer},
-    ]
-    history = history[-20:]   # 10 turns × 2 messages
-
-    # Render chat bubbles
-    bubbles = []
-    for msg in history:
-        is_user = msg['role'] == 'user'
-        # Parse bold markers **text** into spans
-        parts = msg['content'].split('**')
-        rendered = []
-        for i, part in enumerate(parts):
-            if i % 2 == 1:
-                rendered.append(html.Strong(part))
-            else:
-                # parse *italic*
-                italic_parts = part.split('*')
-                for j, ip in enumerate(italic_parts):
-                    rendered.append(html.Em(ip) if j % 2 == 1 else ip)
-
-        bubbles.append(html.Div(
-            rendered,
-            style={
-                'alignSelf':     'flex-end'  if is_user else 'flex-start',
-                'background':    '#378ADD'   if is_user else '#f5f5f5',
-                'color':         '#fff'      if is_user else '#111',
-                'borderRadius':  '14px 14px 4px 14px' if is_user else '14px 14px 14px 4px',
-                'padding':       '10px 14px',
-                'fontSize':      '14px',
-                'lineHeight':    '1.6',
-                'maxWidth':      '80%',
-            },
-        ))
-
-    return bubbles, history, ''
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # MARKET INTELLIGENCE CALLBACKS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1341,73 +1409,173 @@ def _render_sector_geo_inner(intel, port_data):
     sg = intel.get('sector_geo', {})
     positions = port_data['positions']
 
-    # Build weighted sector and country aggregates
-    sector_val:  dict = {}
-    country_val: dict = {}
+    # Build weighted sector and country aggregates.
+    # ETFs with a Yahoo Finance sector_weights breakdown are distributed
+    # across real sectors (Technology, Financials, …) proportionally to
+    # their holdings — so an S&P 500 ETF contributes ~30% Technology,
+    # ~15% Financials, etc. instead of a single 'ETF / Fund' slice.
+    # If the ETF returned no sector_weights (e.g. a bond ETF, or yfinance
+    # had no data), we fall back to the raw `sector` field as before.
+    sector_val:     dict = {}
+    country_val:    dict = {}
     sector_tickers: dict = {}
 
     for p in positions:
         sym  = p['ticker']
         val  = p['market_value']
         info = sg.get(sym, {})
-        sec  = info.get('sector',  'Unknown')
         cty  = info.get('country', 'Unknown')
-
-        sector_val[sec]  = sector_val.get(sec, 0)  + val
         country_val[cty] = country_val.get(cty, 0) + val
-        sector_tickers.setdefault(sec, []).append(sym)
+
+        weights = info.get('sector_weights') or {}
+        if info.get('is_etf') and weights:
+            wsum = sum(weights.values()) or 1.0
+            for sec, w in weights.items():
+                share = val * (w / wsum)
+                sector_val[sec] = sector_val.get(sec, 0) + share
+                sector_tickers.setdefault(sec, []).append(sym)
+        else:
+            sec = info.get('sector', 'Unknown')
+            sector_val[sec]  = sector_val.get(sec, 0) + val
+            sector_tickers.setdefault(sec, []).append(sym)
+
+    # De-duplicate ticker lists (an ETF can hit the same sector twice if
+    # its yfinance weights returned both 'realestate' and 'real_estate').
+    for sec, tks in sector_tickers.items():
+        seen: list = []
+        for t in tks:
+            if t not in seen:
+                seen.append(t)
+        sector_tickers[sec] = seen
 
     total = sum(sector_val.values()) or 1
 
     # ── Sector donut ────────────────────────────────────────────────────────
-    sec_labels = list(sector_val.keys())
-    sec_values = [sector_val[s] for s in sec_labels]
+    # Donut shows every sector (full breakdown).  Legend below hides anything
+    # under MIN_SECTOR_PCT to keep the list readable — sub-threshold sectors
+    # are folded into an 'Other' row there, not in the donut.
+    MIN_SECTOR_PCT = 5.0
+
+    # Full sorted list for the donut
+    sec_full_sorted = sorted(sector_val.items(), key=lambda x: x[1], reverse=True)
+    sec_labels = [s[0] for s in sec_full_sorted]
+    sec_values = [s[1] for s in sec_full_sorted]
 
     colors = ['#378ADD', '#f97316', '#a855f7', '#22c55e',
               '#eab308', '#ec4899', '#14b8a6', '#6366f1',
               '#84cc16', '#ef4444', '#06b6d4']
+    sec_colors = [colors[i % len(colors)] for i in range(len(sec_labels))]
+    # Color lookup shared between the donut and the legend so matching
+    # sectors always use the same dot color.
+    color_by_sec = dict(zip(sec_labels, sec_colors))
 
+    # Portfolio total for the donut center label.
+    # market_value comes from IBKR in USD for US positions — convert to EUR
+    # (matching the Total Value summary card) before formatting with the € sign.
+    rate = (port_data.get('account') or {}).get('eurusd_rate') or 1.08
+    total_val_raw = (port_data.get('summary') or {}).get('total_value') or total
+    total_val_eur = to_eur(total_val_raw, rate)
+    if total_val_eur >= 1_000_000:
+        center_val = f"€{total_val_eur/1_000_000:.2f}M"
+    elif total_val_eur >= 1_000:
+        center_val = f"€{total_val_eur/1_000:.1f}K"
+    else:
+        center_val = f"€{total_val_eur:,.0f}"
+
+    sec_values_eur = [to_eur(v, rate) for v in sec_values]
     donut = go.Figure(go.Pie(
         labels=sec_labels, values=sec_values, hole=0.62,
-        textposition='none',
-        marker=dict(colors=colors[:len(sec_labels)]),
-        hovertemplate='<b>%{label}</b><br>%{percent:.1%}  ·  $%{value:,.0f}<extra></extra>',
+        textposition='none', sort=False,
+        marker=dict(colors=sec_colors),
+        customdata=sec_values_eur,
+        hovertemplate='<b>%{label}</b><br>%{percent:.1%}  ·  €%{customdata:,.0f}<extra></extra>',
     ))
     donut.update_layout(
         margin=dict(t=0, b=0, l=0, r=0),
         showlegend=False,
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         height=200,
+        annotations=[dict(
+            text=(f"<span style='font-size:18px;color:#111;font-weight:600'>"
+                  f"{center_val}</span><br>"
+                  f"<span style='font-size:11px;color:#888;"
+                  f"letter-spacing:0.05em;text-transform:uppercase'>Portfolio</span>"),
+            x=0.5, y=0.5, showarrow=False, align='center',
+        )],
     )
 
-    # ── Country bar chart ────────────────────────────────────────────────────
+    # ── Country chart ────────────────────────────────────────────────────────
+    # When the portfolio has ≤2 countries a horizontal bar looks silly
+    # (one giant stripe), so fall back to the same donut style as Sector.
     cty_sorted = sorted(country_val.items(), key=lambda x: x[1], reverse=True)[:8]
     cty_labels = [c[0] for c in cty_sorted]
     cty_values = [c[1] / total * 100 for c in cty_sorted]
 
-    bar = go.Figure(go.Bar(
-        x=cty_values, y=cty_labels,
-        orientation='h',
-        marker=dict(color='#378ADD', opacity=0.75),
-        hovertemplate='%{y}: <b>%{x:.1f}%</b><extra></extra>',
-        text=[f'{v:.1f}%' for v in cty_values],
-        textposition='outside',
-        textfont=dict(size=11, color='#555'),
-    ))
-    bar.update_layout(
-        margin=dict(t=0, b=0, l=0, r=80),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(visible=False),
-        yaxis=dict(tickfont=dict(size=11), autorange='reversed'),
-        height=200,
-    )
+    country_colors = ['#378ADD', '#22c55e', '#f97316', '#a855f7',
+                      '#eab308', '#ec4899', '#14b8a6', '#6366f1']
+
+    if len(cty_labels) <= 2:
+        bar = go.Figure(go.Pie(
+            labels=cty_labels, values=cty_values, hole=0.62,
+            textposition='none',
+            marker=dict(colors=country_colors[:len(cty_labels)]),
+            hovertemplate='<b>%{label}</b><br>%{percent:.1%}<extra></extra>',
+        ))
+        center_text = (f"{cty_values[0]:.0f}%<br>"
+                       f"<span style='font-size:11px;color:#888'>{cty_labels[0]}</span>"
+                       if len(cty_labels) == 1 else '')
+        bar.update_layout(
+            margin=dict(t=0, b=0, l=0, r=0),
+            showlegend=(len(cty_labels) > 1),
+            legend=dict(orientation='h', yanchor='bottom', y=-0.15,
+                        xanchor='center', x=0.5, font=dict(size=11)),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            height=200,
+            annotations=[dict(text=center_text, x=0.5, y=0.5,
+                              font=dict(size=20, color='#333'),
+                              showarrow=False)] if center_text else [],
+        )
+    else:
+        bar = go.Figure(go.Bar(
+            x=cty_values, y=cty_labels,
+            orientation='h',
+            marker=dict(color='#378ADD', opacity=0.75),
+            hovertemplate='%{y}: <b>%{x:.1f}%</b><extra></extra>',
+            text=[f'{v:.1f}%' for v in cty_values],
+            textposition='outside',
+            textfont=dict(size=11, color='#555'),
+        ))
+        bar.update_layout(
+            margin=dict(t=0, b=0, l=0, r=80),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(visible=False),
+            yaxis=dict(tickfont=dict(size=11), autorange='reversed'),
+            height=200,
+        )
 
     # ── Sector breakdown legend table ────────────────────────────────────────
+    # Only sectors ≥MIN_SECTOR_PCT shown as rows; everything smaller is
+    # rolled into a single 'Other' row so the list stays scannable.
+    # Colors match the donut slices (via color_by_sec).  'Other' is grey.
+    legend_sectors: list = []
+    other_val = 0.0
+    other_names: list = []
+    for sec, val in sec_full_sorted:
+        if (val / total * 100) >= MIN_SECTOR_PCT:
+            legend_sectors.append((sec, val, color_by_sec[sec]))
+        else:
+            other_val += val
+            other_names.append(sec)
+    if other_val / total * 100 >= 1.0:
+        other_tickers = sorted({
+            t for s in other_names for t in sector_tickers.get(s, [])
+        })
+        sector_tickers['Other'] = other_tickers
+        legend_sectors.append(('Other', other_val, '#b8b8b8'))
+
     legend_rows = []
-    for i, (sec, val) in enumerate(sorted(sector_val.items(),
-                                           key=lambda x: x[1], reverse=True)):
+    for sec, val, dot_color in legend_sectors:
         pct = val / total * 100
-        dot_color = colors[i % len(colors)]
         tickers_str = ', '.join(sorted(sector_tickers.get(sec, [])))
         legend_rows.append(html.Tr([
             html.Td(html.Div(style={
@@ -1427,6 +1595,12 @@ def _render_sector_geo_inner(intel, port_data):
         style={'width': '100%', 'borderCollapse': 'collapse', 'marginTop': '17px'},
     )
 
+    # When the country chart is a donut (≤2 countries) both the label and
+    # the chart are centered in their column so the block doesn't look
+    # like it's floating against the left edge of a too-wide flex cell.
+    country_is_donut = len(cty_labels) <= 2
+    country_align    = 'center' if country_is_donut else 'left'
+
     return html.Div([
         section_label("Sector & Geography Exposure"),
         html.Div([
@@ -1438,14 +1612,22 @@ def _render_sector_geo_inner(intel, port_data):
                 dcc.Graph(figure=donut, config={'displayModeBar': False}),
             ], style={'flex': '2', 'minWidth': '200px'}),
 
-            # Right: country bar
+            # Right: country chart (donut centered, bar left-aligned)
             html.Div([
                 html.P("Country", style={'fontSize': '13px', 'color': '#777',
                                           'textTransform': 'uppercase',
-                                          'letterSpacing': '0.04em', 'margin': '0 0 8px'}),
-                dcc.Graph(figure=bar, config={'displayModeBar': False}),
-            ], style={'flex': '3', 'minWidth': '200px'}),
-        ], style={'display': 'flex', 'gap': '24px', 'flexWrap': 'wrap'}),
+                                          'letterSpacing': '0.04em',
+                                          'margin': '0 0 8px',
+                                          'textAlign': country_align}),
+                html.Div(
+                    dcc.Graph(figure=bar, config={'displayModeBar': False}),
+                    style={'maxWidth': '280px', 'margin': '0 auto'}
+                            if country_is_donut else {},
+                ),
+            ], style={'flex': '2' if country_is_donut else '3',
+                      'minWidth': '200px'}),
+        ], style={'display': 'flex', 'gap': '24px', 'flexWrap': 'wrap',
+                  'alignItems': 'flex-start'}),
         sector_legend,
     ], style=CARD)
 
@@ -1547,79 +1729,6 @@ def _render_earnings_inner(intel, port_data):
         table,
     ], style=CARD)
 
-
-
-_SCENARIOS = [  # kept for potential future use — not rendered
-    {
-        'name':       '2008 Global Financial Crisis',
-        'period':     'Sep 2008 – Mar 2009',
-        'shocks': {
-            'Financials':          -77, 'Real Estate':         -68,
-            'Industrials':         -52, 'Consumer Discretionary': -50,
-            'Materials':           -48, 'Technology':          -47,
-            'Energy':              -45, 'Health Care':         -28,
-            'Consumer Staples':    -25, 'Utilities':           -33,
-            'Communication Services': -42, 'Unknown':          -45,
-        },
-        'market_drop': -56,
-    },
-    {
-        'name':       'COVID-19 Crash',
-        'period':     'Feb – Mar 2020',
-        'shocks': {
-            'Energy':              -55, 'Financials':          -40,
-            'Industrials':         -40, 'Consumer Discretionary': -38,
-            'Real Estate':         -35, 'Materials':           -33,
-            'Technology':          -25, 'Communication Services': -22,
-            'Health Care':         -18, 'Consumer Staples':    -15,
-            'Utilities':           -20, 'Unknown':             -30,
-        },
-        'market_drop': -34,
-    },
-    {
-        'name':       'Dot-com Bust',
-        'period':     'Mar 2000 – Oct 2002',
-        'shocks': {
-            'Technology':          -82, 'Communication Services': -72,
-            'Consumer Discretionary': -42, 'Industrials':        -30,
-            'Financials':          -20, 'Materials':             -22,
-            'Energy':              +10, 'Health Care':           -25,
-            'Consumer Staples':     -5, 'Utilities':             -55,
-            'Real Estate':          +5, 'Unknown':               -40,
-        },
-        'market_drop': -49,
-    },
-    {
-        'name':       '2022 Rate Hike Bear Market',
-        'period':     'Jan – Dec 2022',
-        'shocks': {
-            'Technology':          -38, 'Communication Services': -40,
-            'Consumer Discretionary': -37, 'Real Estate':        -28,
-            'Financials':          -15, 'Industrials':           -10,
-            'Materials':            -8, 'Energy':               +59,
-            'Health Care':          -6, 'Consumer Staples':      -4,
-            'Utilities':            -1, 'Unknown':              -20,
-        },
-        'market_drop': -19,
-    },
-    {
-        'name':       'Black Monday 1987',
-        'period':     'Oct 19, 1987',
-        'shocks': {
-            'Financials':          -30, 'Technology':           -28,
-            'Industrials':         -25, 'Consumer Discretionary': -24,
-            'Materials':           -22, 'Energy':               -20,
-            'Health Care':         -18, 'Consumer Staples':     -16,
-            'Communication Services': -25, 'Utilities':         -20,
-            'Real Estate':         -22, 'Unknown':              -22,
-        },
-        'market_drop': -22,
-    },
-]
-
-
-def _render_scenarios_inner(intel, port_data):  # unused — section removed
-    return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MARKET VALUATION CALLBACKS
@@ -1803,8 +1912,8 @@ def _render_market_valuation_inner(data):
             _val_zone_bar(bv, [
                 ('Well Below Norms',   75,  '#16a34a'),
                 ('Fairly Valued',     110,  '#22c55e'),
-                ('Modern Range',      150,  '#84cc16'),
-                ('Running Hot',       190,  '#f97316'),
+                ('Modern',            150,  '#84cc16'),
+                ('Hot',               190,  '#f97316'),
                 ('Stretched',         280,  '#dc2626'),
             ], display_max=280),
             html.Div([
@@ -1919,7 +2028,7 @@ def _render_market_valuation_inner(data):
         metric_card('Shiller CAPE',
                     'P/E smoothed over 10 years (more reliable)',
                     cape_body, cape_foot),
-    ], style={'display': 'flex', 'gap': '14px', 'alignItems': 'flex-start'})
+    ], style={'display': 'flex', 'gap': '14px', 'alignItems': 'stretch'})
 
     # ── Yield Gap ─────────────────────────────────────────────────────────────
     # Ties the P/E and Treasury yield together into a single verdict:

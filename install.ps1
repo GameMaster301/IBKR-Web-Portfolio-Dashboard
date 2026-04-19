@@ -66,11 +66,6 @@ IBKR_READONLY=true
 # ── Dashboard ──────────────────────────────────────────────────────────
 DASH_PORT=8050
 OPEN_BROWSER=0
-
-# ── AI analysis (optional) ─────────────────────────────────────────────
-# Uncomment and fill in for Claude-powered portfolio analysis.
-# Get your key at https://console.anthropic.com/
-# ANTHROPIC_API_KEY=sk-ant-...
 "@ | Out-File -Encoding utf8 "$DIR\.env"
 }
 Write-Host " OK" -ForegroundColor Green

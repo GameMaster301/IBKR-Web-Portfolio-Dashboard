@@ -24,3 +24,50 @@
 .kb-hint {
   animation: hintFade 4s ease forwards;
 }
+
+/* Position detail panel slide-in */
+@keyframes slideInDown {
+  0%   { opacity: 0; transform: translateY(-8px); }
+  100% { opacity: 1; transform: translateY(0);    }
+}
+
+/* Holdings row hover + quick-link hover for the detail panel.
+   The left cell gets a blue accent bar + ↗ glyph so the row
+   visibly behaves like a button, reinforcing the "click to open" hint.
+   The ↗ is rendered at full opacity only on hover but is always present
+   (transparent) to reserve its width, so other columns don't shift. */
+#holdings-datatable tr:hover td {
+  background: #f0f7ff !important;
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+#holdings-datatable tr:hover td:first-child {
+  box-shadow: inset 3px 0 0 #378ADD;
+}
+#holdings-datatable td:first-child::after {
+  content: " ↗";
+  color: #378ADD;
+  font-weight: 600;
+  margin-left: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+#holdings-datatable tr:hover td:first-child::after {
+  opacity: 0.9;
+}
+
+#position-detail a:hover {
+  background: #eaf3fc;
+}
+
+/* Connection spinner — shown in the status banner while the IB thread is
+   still trying to reach IB Gateway / TWS on startup. */
+@keyframes ibkrSpin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.ibkr-spinner {
+  animation: ibkrSpin 0.9s linear infinite;
+  box-sizing: border-box;
+}

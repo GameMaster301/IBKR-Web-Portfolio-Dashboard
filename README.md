@@ -41,9 +41,9 @@ Download the **[latest release zip](https://github.com/GameMaster301/IBKR-TWS-We
 - **Allocation donut chart** — visual portfolio weights
 - **Live EUR/USD rate** — fetched directly from IBKR, not a third-party API
 - **Market Valuation** — Buffett Indicator (Wilshire 5000 / US GDP), S&P 500 trailing P/E, Shiller CAPE with 50-year chart; each metric colour-coded by valuation zone
-- **Market Intelligence** — correlation heatmap, sector & geography exposure, earnings calendar, historical scenario analysis, efficient frontier with your portfolio plotted and Sharpe ratio annotated
+- **Market Intelligence** — sector & geography exposure, earnings calendar with historical 1-day post-earnings moves
 - **Dividends tracker** — yield per position, projected annual income, upcoming payment schedule
-- **AI analysis** — built-in rule-based analysis with no setup; Claude upgrade available via `ANTHROPIC_API_KEY`
+- **Historical trades** — click a holding to open its detail panel, then upload a Transaction History CSV (IBKR Client Portal → Performance & Reports → Transaction History). BUY/SELL markers are overlaid on the per-position price chart.
 - **PDF export** — one-click portfolio snapshot download
 - **Auto-reconnect** — exponential back-off with passive heartbeat; dashboard keeps working while IB Gateway or TWS is restarting
 
@@ -114,17 +114,6 @@ python main.py
 
 Open **http://localhost:8050** in your browser. The dashboard auto-refreshes every 60 seconds.
 
-### Optional: AI analysis
-
-```bash
-# Windows
-set ANTHROPIC_API_KEY=sk-ant-...
-python main.py
-
-# macOS / Linux
-ANTHROPIC_API_KEY=sk-ant-... python main.py
-```
-
 ---
 
 ## Docker — build from source
@@ -140,7 +129,7 @@ If you want to build the image yourself instead of pulling from Docker Hub:
 
 ```bash
 cp .env.example .env
-# Edit .env — at minimum set IBKR_PORT and ANTHROPIC_API_KEY if you want AI
+# Edit .env — at minimum set IBKR_PORT
 ```
 
 > **Linux only:** In `.env` replace `IBKR_HOST=host.docker.internal` with your
@@ -225,7 +214,6 @@ All settings can be set via `config.yaml` **or** environment variables (env wins
 | `REFRESH_INTERVAL` | `60` | Auto-refresh interval in seconds |
 | `OPEN_BROWSER` | `1` | Set to `0` to skip browser launch |
 | `CONFIG_PATH` | `config.yaml` | Path to YAML config file |
-| `ANTHROPIC_API_KEY` | _(none)_ | Optional — enables Claude AI analysis (built-in analysis works without it) |
 
 ---
 
@@ -262,10 +250,6 @@ This means a yfinance network call failed. It will retry automatically on the ne
 docker exec -it ibkrdash python -c "import yfinance as yf; print(yf.Ticker('AAPL').info['regularMarketPrice'])"
 ```
 
-### AI analysis returns generic insights instead of Claude responses
-
-The built-in rule-based analysis runs with no setup. To upgrade to Claude, set `ANTHROPIC_API_KEY` in your environment or `.env` file — the key never leaves your machine.
-
 ---
 
 ## Project structure
@@ -277,9 +261,9 @@ The built-in rule-based analysis runs with no setup. To upgrade to Claude, set `
 ├── dashboard.py          Dash layout, all callbacks, graceful error handling
 ├── data_processor.py     Position calculations and enrichment
 ├── analytics.py          Dividend data helpers (yfinance)
-├── market_intel.py       Correlation, sector/geo, earnings, efficient frontier (yfinance)
-├── market_valuation.py   Macro indicators — Buffett, S&P 500 P/E, Shiller CAPE
-├── ai_analyst.py         Claude AI portfolio analysis
+├── market_intel.py       Sector/geo exposure and earnings calendar (yfinance)
+├── market_valuation.py   Macro indicators — Buffett, S&P 500 P/E, Shiller CAPE, 10-yr Treasury
+├── trade_history.py      CSV upload path for historical trades
 ├── assets/
 │   └── custom.css        Dashboard CSS overrides
 ├── config.yaml           Default configuration
@@ -312,7 +296,6 @@ The built-in rule-based analysis runs with no setup. To upgrade to Claude, set `
 | Data processing | [pandas](https://pandas.pydata.org/), [numpy](https://numpy.org/) |
 | Market data | [yfinance](https://github.com/ranaroussi/yfinance) |
 | Dashboard & charts | [Plotly Dash](https://dash.plotly.com/) + Plotly |
-| AI analysis | [Anthropic Claude API](https://console.anthropic.com/) |
 | PDF export | [reportlab](https://www.reportlab.com/) |
 | Containers | Docker + Compose |
 

@@ -6,4 +6,3 @@ dash
 reportlab
 yfinance
 pyyaml
-anthropic>=0.40.0

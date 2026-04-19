@@ -1,6 +1,6 @@
 ibkr:
   host: 127.0.0.1
-  port: 4002
+  port: 7497
   client_id: 1
   readonly: true
   reconnect_delay_seconds: 15

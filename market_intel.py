@@ -13,11 +13,9 @@ Robustness improvements vs original:
 
 Functions
 ---------
-get_price_history       — bulk OHLCV, returns per-ticker dates/prices/returns
-get_correlation_matrix  — pairwise Pearson over daily returns
-get_sector_geo          — sector, industry, country per ticker via yfinance
-get_earnings_data       — next earnings date + historical 1-day post-earnings moves
-compute_efficient_frontier — Monte Carlo weight simulation (uses cached history)
+get_price_history  — bulk OHLCV, returns per-ticker dates/prices/returns
+get_sector_geo     — sector, industry, country per ticker via yfinance
+get_earnings_data  — next earnings date + historical 1-day post-earnings moves
 """
 
 import logging
@@ -34,6 +32,56 @@ log = logging.getLogger(__name__)
 # European holding never silently breaks an entire section.
 
 _EU_SUFFIXES = ['.DE', '.L', '.PA', '.AS', '.MI', '.SW', '.BR', '.LS', '.MC']
+
+# yfinance's ETF sector-weighting keys are lowercase with underscores
+# (e.g. 'consumer_cyclical').  Map them to the same Title-Case names
+# yfinance uses for stocks via .info['sector'], so ETF contributions
+# can be merged straight into the portfolio sector totals.
+_YF_SECTOR_NAMES = {
+    'realestate':             'Real Estate',
+    'real_estate':            'Real Estate',
+    'consumer_cyclical':      'Consumer Cyclical',
+    'basic_materials':        'Basic Materials',
+    'consumer_defensive':     'Consumer Defensive',
+    'technology':             'Technology',
+    'communication_services': 'Communication Services',
+    'financial_services':     'Financial Services',
+    'utilities':              'Utilities',
+    'industrials':            'Industrials',
+    'energy':                 'Energy',
+    'healthcare':             'Healthcare',
+}
+
+
+def _normalize_sector(raw: str) -> str:
+    key = (raw or '').strip().lower().replace('-', '_').replace(' ', '_')
+    return _YF_SECTOR_NAMES.get(key, (raw or '').strip().title() or 'Unknown')
+
+
+def _fetch_etf_sector_weights(yf_ticker) -> dict:
+    """
+    Return {sector_name: fraction} for an ETF via Yahoo Finance's funds_data.
+    Returns {} on any failure (missing attribute, network error, empty data).
+    Fractions are kept as-is (sum to ~1.0).
+    """
+    try:
+        fd = yf_ticker.funds_data
+        raw = getattr(fd, 'sector_weightings', None)
+        if not raw:
+            return {}
+        weights: dict = {}
+        for k, v in raw.items():
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                continue
+            if f <= 0:
+                continue
+            name = _normalize_sector(k)
+            weights[name] = weights.get(name, 0.0) + f
+        return weights
+    except Exception:
+        return {}
 
 # Per-session cache: plain IBKR symbol → resolved Yahoo Finance symbol string.
 # Avoids redundant .info network calls on every 4-hour cache refresh.
@@ -172,7 +220,7 @@ def get_price_history(tickers: list, period: str = '90d') -> dict:
                                           auto_adjust=True, progress=False)
                         if not alt.empty:
                             s_data = alt['Close'].squeeze().dropna()
-                            if len(s_data) >= 10:
+                            if len(s_data) >= 2:
                                 alt_series[sym] = s_data
                                 log.debug('[market_intel] %s resolved via %s%s for prices',
                                           sym, sym, suffix)
@@ -187,7 +235,7 @@ def get_price_history(tickers: list, period: str = '90d') -> dict:
                     s = closes[sym].dropna()
                 else:
                     continue
-                if len(s) < 10:
+                if len(s) < 2:
                     continue
                 r = s.pct_change().dropna()
                 result[sym] = {
@@ -200,28 +248,6 @@ def get_price_history(tickers: list, period: str = '90d') -> dict:
         return result
 
     return _cached(key, fetch)
-
-
-# ── Correlation matrix ─────────────────────────────────────────────────────────
-
-def get_correlation_matrix(tickers: list, period: str = '90d') -> dict:
-    """
-    Pairwise Pearson correlation of daily returns.
-
-    Returns
-    -------
-    {'tickers': [...], 'matrix': [[float, ...], ...]}
-    Empty matrix if < 2 tickers have enough history.
-    """
-    hist  = get_price_history(tickers, period)
-    valid = [s for s in tickers if s in hist and len(hist[s]['returns']) >= 20]
-    if len(valid) < 2:
-        return {'tickers': valid, 'matrix': []}
-
-    n    = min(len(hist[s]['returns']) for s in valid)
-    df   = pd.DataFrame({s: hist[s]['returns'][-n:] for s in valid})
-    corr = df.corr().round(2)
-    return {'tickers': valid, 'matrix': corr.values.tolist()}
 
 
 # ── Sector & geography ─────────────────────────────────────────────────────────
@@ -244,24 +270,54 @@ def get_sector_geo(tickers: list) -> dict:
             try:
                 info = _yf_info(sym)
                 is_etf = info.get('quoteType', '').upper() == 'ETF'
+                sector_weights: dict = {}
                 if is_etf:
                     sector  = info.get('category') or 'ETF / Fund'
                     industry = sector
-                    # Infer geographic exposure from the category name — this
-                    # reflects the ETF's *underlying holdings*, not where it's
+                    # Fetch the ETF's real per-sector holdings breakdown
+                    # so the dashboard can redistribute its weight across
+                    # Technology, Financials, … instead of lumping it
+                    # into a single 'ETF / Fund' slice.  Best-effort only:
+                    # some ETFs (bonds, commodities, small providers) return
+                    # nothing, in which case the caller falls back to the
+                    # category label above.
+                    try:
+                        yf_sym = _resolve_yf_sym(sym)
+                        sector_weights = _fetch_etf_sector_weights(yf.Ticker(yf_sym))
+                    except Exception as e:
+                        log.debug('[market_intel] ETF weights %s: %s', sym, e)
+                    # Infer geographic exposure from the ETF name/category —
+                    # this reflects the *underlying holdings*, not where it's
                     # listed (a UCITS S&P 500 ETF listed in Germany is still US).
-                    cat = sector.lower()
-                    if any(x in cat for x in ('u.s.', 'u.s. ', 'us ', 's&p', 'nasdaq',
+                    # yfinance's `category` is often a Morningstar style-box
+                    # label (e.g. "Large Blend") with no geographic keyword, so
+                    # we also search longName/shortName which usually contain
+                    # the index name (e.g. "SPDR S&P 500 UCITS ETF").
+                    hay = ' '.join(filter(None, [
+                        sector,
+                        info.get('longName')  or '',
+                        info.get('shortName') or '',
+                    ])).lower()
+                    if any(x in hay for x in ('u.s.', ' us ', 's&p', 'sp 500',
+                                              'nasdaq', 'russell',
                                               'america', 'united states', 'domestic')):
                         country = 'United States'
-                    elif any(x in cat for x in ('europe', 'european', 'eurozone')):
-                        country = 'Europe'
-                    elif any(x in cat for x in ('emerging', 'em bond', 'em equity')):
+                    elif any(x in hay for x in ('emerging', 'em bond', 'em equity')):
                         country = 'Emerging Markets'
-                    elif any(x in cat for x in ('global', 'world', 'international')):
+                    elif any(x in hay for x in ('msci world', 'all-world', 'all world',
+                                                'global', 'world', 'international',
+                                                'developed markets')):
                         country = 'Global'
-                    elif any(x in cat for x in ('china', 'japan', 'india', 'pacific')):
-                        country = cat.split()[0].title()
+                    elif any(x in hay for x in ('europe', 'european', 'eurozone',
+                                                'stoxx', 'euro stoxx',
+                                                'ftse 100', 'ftse 250')):
+                        country = 'Europe'
+                    elif any(x in hay for x in ('china', 'japan', 'india', 'pacific',
+                                                'korea', 'taiwan')):
+                        for k in ('china', 'japan', 'india', 'pacific', 'korea', 'taiwan'):
+                            if k in hay:
+                                country = k.title()
+                                break
                     else:
                         country = 'ETF / Global'
                 else:
@@ -269,16 +325,19 @@ def get_sector_geo(tickers: list) -> dict:
                     industry = info.get('industry') or 'Unknown'
                     country  = info.get('country')  or 'Unknown'
                 return sym, {
-                    'sector':   sector,
-                    'industry': industry,
-                    'country':  country,
-                    'longName': info.get('longName') or sym,
+                    'sector':         sector,
+                    'industry':       industry,
+                    'country':        country,
+                    'longName':       info.get('longName') or sym,
+                    'is_etf':         is_etf,
+                    'sector_weights': sector_weights,
                 }
             except Exception as e:
                 log.warning('[market_intel] sector_geo %s: %s', sym, e)
                 return sym, {
                     'sector': 'Unknown', 'industry': 'Unknown',
                     'country': 'Unknown', 'longName': sym,
+                    'is_etf': False, 'sector_weights': {},
                 }
 
         with ThreadPoolExecutor(max_workers=min(len(tickers), 6)) as pool:

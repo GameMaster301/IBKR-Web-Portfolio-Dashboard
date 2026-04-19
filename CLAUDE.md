@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 python main.py
 
 # Docker — build from source
-cp .env.example .env          # first time only; edit IBKR_PORT and optionally ANTHROPIC_API_KEY
+cp .env.example .env          # first time only; edit IBKR_PORT
 docker compose up --build -d
 docker compose logs -f dashboard
 ```
@@ -25,6 +25,8 @@ The app is a Plotly Dash single-page dashboard. One Python process runs two conc
 1. **IB background thread** (`ibkr_client.py`) — a daemon thread running its own `asyncio` event loop, maintaining a persistent `ib_async.IB()` connection to TWS with exponential back-off reconnect and a 30-second heartbeat. All IB calls are async coroutines dispatched via `asyncio.run_coroutine_threadsafe`.
 
 2. **Dash web server** (`dashboard.py`) — Dash callbacks run in a Flask/Werkzeug thread pool. They call into the IB thread via the module-level `_conn` singleton in `ibkr_client.py`.
+
+**Port fallback:** `ibkr_client` tries the configured `IBKR_PORT` first and then falls through `[7497, 4002, 7496, 4001]`, so the dashboard works with either IB Gateway or TWS (paper/live) without config changes. The "Retry connection" button in the UI calls `ibkr_client.request_retry()`, which wakes the reconnect loop immediately (bypasses the exponential back-off sleep) via an `asyncio.Event`.
 
 ### Data flow
 
@@ -60,19 +62,19 @@ dcc.Interval('refresh-interval') ──► populate_valuation_data()
 | `dashboard.py` | All Dash layout and callbacks (~2000 lines) — the core of the UI |
 | `data_processor.py` | Pure pandas transforms: enriches raw positions with daily change, spread, 52w range, allocation % |
 | `analytics.py` | `get_dividend_data_yf()` — yfinance dividend fallback with 4h cache and parallel fetching |
-| `market_intel.py` | yfinance-backed: price history, correlation matrix, sector/geo, earnings — all 4h cached |
+| `market_intel.py` | yfinance-backed: price history, sector/geo, earnings — all 4h cached |
 | `market_valuation.py` | Macro indicators: Buffett (Wilshire/FRED GDP, World Bank fallback), S&P 500 P/E (multpl.com), Shiller CAPE (multpl.com), 10-yr Treasury yield (FRED) — 4h cached |
-| `ai_analyst.py` | Dual-mode AI: rule-based analysis/chat (no API key needed) with automatic upgrade to `claude-sonnet-4-6` when `ANTHROPIC_API_KEY` is set. Public entry points: `analyse_portfolio()`, `chat_portfolio()`, and `analyse_position()` (per-position analysis for the detail panel). |
+| `trade_history.py` | CSV upload path for historical trades. `reqExecutions` only returns ~7 days, so users upload IBKR Client Portal Transaction History CSVs. Parsed trades are normalized to the live-trade dict shape and persisted to `data/uploaded_trades.json` (override dir via `IBKRDASH_DATA_DIR`). |
 | `config.py` | Merges `config.yaml` defaults → env var overrides, exposes `cfg` dict |
 
 ### Key Dash patterns used
 
 - **`dcc.Store` as message bus** — callbacks never call each other directly; they read/write stores. `portfolio-data` is the source of truth for all rendering.
-- **`prevent_initial_call=True`** on user-triggered callbacks (AI analysis, PDF export, position click).
+- **`prevent_initial_call=True`** on user-triggered callbacks (PDF export, position click, trade-CSV upload).
 - **`no_update`** returned from `populate_market_intel` when the ticker list hasn't changed, preventing full chart rebuilds on every 60-second refresh.
 - **`clientside_callback`** for keyboard shortcuts (R = refresh, Esc = close detail panel) to avoid round-trips.
-- **Pattern-matching callbacks** — the AI chip row uses `{'type': 'chip-btn', 'index': question}` IDs. The "Analyse Portfolio" primary action is `{'type': 'chip-btn', 'index': '__analyse__'}` (not a separate `ai-analyse-btn`).
-- **Position detail panel** — clicking a holdings row triggers `show_position_detail` (opens the slide-out panel) and `run_position_ai_analysis` (per-position Claude/rule-based analysis). The panel is a second callback surface separate from the main page layout.
+- **Pattern-matching callbacks** — per-position widgets use `{'type': 'position-trade-upload', 'index': 0}` and `{'type': 'position-close', 'index': 0}` IDs so the detail panel can mount transient controls without adding new top-level callbacks.
+- **Position detail panel** — clicking a holdings row triggers `show_position_detail`, which renders the slide-out panel with stats, a price sparkline, and a trade-history CSV uploader. The panel is a second callback surface separate from the main page layout.
 - **Parallel fetching** — `populate_market_intel` and `populate_valuation_data` both use `ThreadPoolExecutor` to fan out yfinance/HTTP calls concurrently. `populate_valuation_data` fetches 4 metrics in parallel: Buffett, S&P 500 P/E, Shiller CAPE, and 10-yr Treasury yield.
 
 ### Styling
@@ -88,7 +90,7 @@ All CSS customisation lives in `assets/custom.css`. Dash auto-serves everything 
 
 ### Configuration priority
 
-`config.yaml` defaults → env vars win. Key env vars: `IBKR_HOST`, `IBKR_PORT`, `IBKR_CLIENT_ID`, `IBKR_READONLY`, `IBKR_RECONNECT_DELAY`, `DASH_HOST`, `DASH_PORT`, `REFRESH_INTERVAL`, `EURUSD_FALLBACK`, `ANTHROPIC_API_KEY`. `CONFIG_PATH` overrides the default `config.yaml` location (useful for Docker volume mounts). Docker sets `DASH_HOST=0.0.0.0` and `OPEN_BROWSER=0` automatically.
+`config.yaml` defaults → env vars win. Key env vars: `IBKR_HOST`, `IBKR_PORT`, `IBKR_CLIENT_ID`, `IBKR_READONLY`, `IBKR_RECONNECT_DELAY`, `DASH_HOST`, `DASH_PORT`, `REFRESH_INTERVAL`, `EURUSD_FALLBACK`. `CONFIG_PATH` overrides the default `config.yaml` location (useful for Docker volume mounts). Docker sets `DASH_HOST=0.0.0.0` and `OPEN_BROWSER=0` automatically.
 
 ### Adding a new dashboard section
 
