@@ -118,6 +118,6 @@ Market data sections show "temporarily unavailable"
   → This is a temporary network issue — it retries automatically
   → If it persists, check your internet connection
 
-More help: https://github.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard
+More help: https://github.com/GameMaster301/IBKR-Web-Portfolio-Dashboard
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

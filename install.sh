@@ -2,11 +2,11 @@
 # IBKR Portfolio Dashboard — Mac / Linux Installer
 # ─────────────────────────────────────────────────
 # Run once in Terminal:
-#   curl -fsSL https://raw.githubusercontent.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/GameMaster301/IBKR-Web-Portfolio-Dashboard/main/install.sh | bash
 
 set -e
 
-REPO="GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard"
+REPO="GameMaster301/IBKR-Web-Portfolio-Dashboard"
 RAW="https://raw.githubusercontent.com/$REPO/main"
 DIR="$HOME/ibkrdash"
 

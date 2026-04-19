@@ -17,7 +17,7 @@ A real-time, private portfolio dashboard for Interactive Brokers — built with 
 ### Windows — paste into PowerShell
 
 ```powershell
-irm https://raw.githubusercontent.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/GameMaster301/IBKR-Web-Portfolio-Dashboard/main/install.ps1 | iex
 ```
 
 Creates a desktop shortcut. Double-click it any time to start.
@@ -25,12 +25,12 @@ Creates a desktop shortcut. Double-click it any time to start.
 ### Mac / Linux — paste into Terminal
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/GameMaster301/IBKR-Web-Portfolio-Dashboard/main/install.sh | bash
 ```
 
 ### Prefer not to use a terminal?
 
-Download the **[latest release zip](https://github.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/releases/latest)**, extract it anywhere, and follow **SETUP.txt** inside. Then double-click `start.bat` (Windows) or run `./start.sh` (Mac/Linux).
+Download the **[latest release zip](https://github.com/GameMaster301/IBKR-Web-Portfolio-Dashboard/releases/latest)**, extract it anywhere, and follow **SETUP.txt** inside. Then double-click `start.bat` (Windows) or run `./start.sh` (Mac/Linux).
 
 ---
 
@@ -60,8 +60,8 @@ Download the **[latest release zip](https://github.com/GameMaster301/IBKR-TWS-We
 ### Install
 
 ```bash
-git clone https://github.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard.git
-cd IBKR-TWS-Web-Portfolio-Dashboard
+git clone https://github.com/GameMaster301/IBKR-Web-Portfolio-Dashboard.git
+cd IBKR-Web-Portfolio-Dashboard
 pip install -r requirements.txt
 ```
 

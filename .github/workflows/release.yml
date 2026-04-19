@@ -87,12 +87,12 @@ jobs:
 
             **Windows** — paste into PowerShell:
             ```powershell
-            irm https://raw.githubusercontent.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/main/install.ps1 | iex
+            irm https://raw.githubusercontent.com/GameMaster301/IBKR-Web-Portfolio-Dashboard/main/install.ps1 | iex
             ```
 
             **Mac / Linux** — paste into Terminal:
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/GameMaster301/IBKR-TWS-Web-Portfolio-Dashboard/main/install.sh | bash
+            curl -fsSL https://raw.githubusercontent.com/GameMaster301/IBKR-Web-Portfolio-Dashboard/main/install.sh | bash
             ```
 
             ---
