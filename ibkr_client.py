@@ -22,11 +22,15 @@ TWS ports (if you prefer TWS):
   7496 — live trading
 """
 
+from __future__ import annotations
+
 import asyncio
+import concurrent.futures
 import logging
 import threading
 from datetime import datetime, timedelta
-from ib_async import IB, Forex, ExecutionFilter
+
+from ib_async import IB, ExecutionFilter, Forex
 
 log = logging.getLogger(__name__)
 
@@ -86,12 +90,22 @@ class _IBKRConnection:
         if not self._fetch_lock.acquire(blocking=False):
             log.info("Fetch already in progress — skipping this refresh")
             return None
+        future: concurrent.futures.Future | None = None
         try:
             future = asyncio.run_coroutine_threadsafe(
                 self._do_fetch(), self._loop)
             return future.result(timeout=60)
+        except concurrent.futures.TimeoutError:
+            # TWS hung for >60 s. Cancel the coroutine on the IB loop so it
+            # doesn't leak and keep the lock blocked on subsequent ticks.
+            log.warning("fetch_all_data timed out after 60 s — cancelling coroutine")
+            if future is not None:
+                future.cancel()
+            return None
         except Exception as e:
             log.error("fetch_all_data error: %s", e, exc_info=False)
+            if future is not None and not future.done():
+                future.cancel()
             return None
         finally:
             self._fetch_lock.release()
@@ -470,11 +484,31 @@ class _IBKRConnection:
 
 _conn = _IBKRConnection()
 
+# Demo mode short-circuits every public entry point to return a deterministic
+# mock payload instead of talking to TWS. Toggled at startup via DEMO_MODE env
+# var or at runtime from the dashboard UI.
+_demo_mode = False
+
+
+def set_demo_mode(on: bool) -> None:
+    global _demo_mode
+    _demo_mode = bool(on)
+
+
+def is_demo_mode() -> bool:
+    return _demo_mode
+
 
 def start_connection(host='127.0.0.1', port=4002, client_id=1,
                      readonly=True, reconnect_delay=_BASE_BACKOFF,
                      heartbeat_interval=30):
-    """Call once at startup to launch the background IB thread."""
+    """Call once at startup to launch the background IB thread.
+
+    In demo mode this is a no-op — no socket, no thread, no log spam.
+    """
+    if _demo_mode:
+        log.info("Demo mode active — skipping IBKR connection thread")
+        return
     _conn.start(
         host=host, port=port, client_id=client_id,
         readonly=readonly, reconnect_delay=reconnect_delay,
@@ -483,13 +517,20 @@ def start_connection(host='127.0.0.1', port=4002, client_id=1,
 
 
 def fetch_all_data() -> dict | None:
+    if _demo_mode:
+        from demo_data import build_demo_payload
+        return build_demo_payload()
     return _conn.fetch_all_data()
 
 
 def connection_status() -> str:
+    if _demo_mode:
+        return 'connected'
     return _conn.status
 
 
 def request_retry():
     """Ask the background thread to attempt reconnecting immediately."""
+    if _demo_mode:
+        return
     _conn.request_retry()

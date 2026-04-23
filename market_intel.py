@@ -7,7 +7,7 @@ repeated Dash callback invocations don't hit yfinance every time.
 Robustness improvements vs original:
 - Every yfinance call has a per-symbol try/except; one bad ticker never
   breaks the whole batch.
-- Simple retry wrapper (_fetch_with_retry) handles transient network errors.
+- Transient network errors are retried via net_util.fetch_with_retry.
 - All functions return empty/None rather than raising, so Dash callbacks
   can show a friendly "data unavailable" message instead of a 500 error.
 
@@ -18,10 +18,14 @@ get_sector_geo     — sector, industry, country per ticker via yfinance
 get_earnings_data  — next earnings date + historical 1-day post-earnings moves
 """
 
+from __future__ import annotations
+
 import logging
-import time
+
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
+
+from cache_util import cached_fetch
+from net_util import fetch_parallel, fetch_with_retry
 
 log = logging.getLogger(__name__)
 
@@ -138,37 +142,8 @@ def _resolve_yf_sym(sym: str) -> str:
     return resolved
 
 
-# ── In-process cache ───────────────────────────────────────────────────────────
-_CACHE: dict = {}
-_TTL = 3600 * 4   # 4 hours
-
-
-def _cached(key, fn):
-    """Return cached value if fresh, else call fn(), cache, and return."""
-    now = time.time()
-    if key in _CACHE:
-        ts, val = _CACHE[key]
-        if now - ts < _TTL:
-            return val
-    val = fn()
-    _CACHE[key] = (now, val)
-    return val
-
-
-def _fetch_with_retry(fn, retries: int = 3, delay: float = 2.0):
-    """
-    Call fn() up to `retries` times, sleeping `delay` seconds between
-    attempts.  Returns the result or raises the last exception.
-    """
-    last_exc = None
-    for attempt in range(retries):
-        try:
-            return fn()
-        except Exception as e:
-            last_exc = e
-            if attempt < retries - 1:
-                time.sleep(delay * (attempt + 1))
-    raise last_exc
+# ── Cache TTL ──────────────────────────────────────────────────────────────────
+_TTL = 3600 * 4   # 4 hours; backed by cache_util (diskcache, persists across restarts)
 
 
 # ── Price history ──────────────────────────────────────────────────────────────
@@ -196,7 +171,7 @@ def get_price_history(tickers: list, period: str = '90d') -> dict:
                 return yf.download(syms, period=period, auto_adjust=True,
                                    progress=False, threads=True)
 
-            raw = _fetch_with_retry(_download)
+            raw = fetch_with_retry(_download)
             if raw.empty:
                 closes = pd.DataFrame()
             elif len(tickers) == 1:
@@ -247,7 +222,7 @@ def get_price_history(tickers: list, period: str = '90d') -> dict:
             log.warning('[market_intel] price_history error: %s', e)
         return result
 
-    return _cached(key, fetch)
+    return cached_fetch(key, _TTL, fetch)
 
 
 # ── Sector & geography ─────────────────────────────────────────────────────────
@@ -324,7 +299,7 @@ def get_sector_geo(tickers: list) -> dict:
                     sector   = info.get('sector')   or 'Unknown'
                     industry = info.get('industry') or 'Unknown'
                     country  = info.get('country')  or 'Unknown'
-                return sym, {
+                return {
                     'sector':         sector,
                     'industry':       industry,
                     'country':        country,
@@ -334,16 +309,15 @@ def get_sector_geo(tickers: list) -> dict:
                 }
             except Exception as e:
                 log.warning('[market_intel] sector_geo %s: %s', sym, e)
-                return sym, {
+                return {
                     'sector': 'Unknown', 'industry': 'Unknown',
                     'country': 'Unknown', 'longName': sym,
                     'is_etf': False, 'sector_weights': {},
                 }
 
-        with ThreadPoolExecutor(max_workers=min(len(tickers), 6)) as pool:
-            return dict(pool.map(one, tickers))
+        return fetch_parallel(tickers, one)
 
-    return _cached(key, fetch)
+    return cached_fetch(key, _TTL, fetch)
 
 
 # ── Earnings calendar ──────────────────────────────────────────────────────────
@@ -369,7 +343,7 @@ def get_earnings_data(tickers: list) -> dict:
                 # Resolve to the correct Yahoo Finance symbol (e.g. SPPE → SPPE.DE)
                 yf_sym = _resolve_yf_sym(sym)
                 t      = yf.Ticker(yf_sym)
-                info   = _fetch_with_retry(lambda: t.info, retries=2)
+                info   = fetch_with_retry(lambda: t.info, retries=2)
 
                 # Next earnings date
                 for field in ('earningsTimestamp', 'earningsTimestampStart'):
@@ -418,10 +392,9 @@ def get_earnings_data(tickers: list) -> dict:
 
             except Exception as e:
                 log.warning('[market_intel] earnings %s: %s', sym, e)
-            return sym, out
+            return out
 
-        with ThreadPoolExecutor(max_workers=min(len(tickers), 6)) as pool:
-            return dict(pool.map(one, tickers))
+        return fetch_parallel(tickers, one)
 
-    return _cached(key, fetch)
+    return cached_fetch(key, _TTL, fetch)
 

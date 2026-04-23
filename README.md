@@ -1,6 +1,6 @@
 # IBKR Portfolio Dashboard
 
-A real-time, private portfolio dashboard for Interactive Brokers — built with Python and Plotly Dash. Connects directly to **IB Gateway** via the `ib_async` API. No third-party data providers for live prices, no delays, read-only.
+A real-time, private portfolio dashboard for Interactive Brokers — built with Python and Plotly Dash. Connects directly to **IB Gateway or TWS** via the `ib_async` API. No third-party data providers for live prices, no delays, read-only.
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat&logo=python&logoColor=white)
 ![Dash](https://img.shields.io/badge/Plotly_Dash-2.x-119DFF?style=flat&logo=plotly&logoColor=white)
@@ -40,12 +40,14 @@ Download the **[latest release zip](https://github.com/GameMaster301/IBKR-Web-Po
 - **Summary cards** — total value, unrealised P&L, today's P&L, cash (EUR + % of portfolio)
 - **Allocation donut chart** — visual portfolio weights
 - **Live EUR/USD rate** — fetched directly from IBKR, not a third-party API
-- **Market Valuation** — Buffett Indicator (Wilshire 5000 / US GDP), S&P 500 trailing P/E, Shiller CAPE with 50-year chart; each metric colour-coded by valuation zone
+- **Market Valuation** — Buffett Indicator (Wilshire 5000 / US GDP), S&P 500 trailing P/E, Shiller CAPE with 50-year chart, 10-year US Treasury yield; each metric colour-coded by valuation zone
 - **Market Intelligence** — sector & geography exposure, earnings calendar with historical 1-day post-earnings moves
 - **Dividends tracker** — yield per position, projected annual income, upcoming payment schedule
 - **Historical trades** — click a holding to open its detail panel, then upload a Transaction History CSV (IBKR Client Portal → Performance & Reports → Transaction History). BUY/SELL markers are overlaid on the per-position price chart.
+- **Portfolio Coach** — "✨ Ask coach" button on the Holdings card opens a chat panel. Works with zero config: 8 rules-based scenarios (performance, biggest risk, what-if, sector/geo, earnings watch, vs market, currency exposure, winners & losers) answered in plain English using only your live portfolio data. Optionally paste an Anthropic / xAI / OpenAI key (auto-detected from the prefix, stored in browser localStorage only — never uploaded) to unlock free-form chat with multi-thread tabs, edit/regenerate, per-position "Ask coach about {ticker}" shortcuts, and a resizable panel.
 - **PDF export** — one-click portfolio snapshot download
 - **Auto-reconnect** — exponential back-off with passive heartbeat; dashboard keeps working while IB Gateway or TWS is restarting
+- **Demo mode** — no TWS? Click **Try demo mode** on the start screen (or set `DEMO_MODE=1`) to explore the full dashboard against a deterministic sample portfolio. All features work, including the Coach and market intel charts.
 
 ---
 
@@ -205,7 +207,7 @@ All settings can be set via `config.yaml` **or** environment variables (env wins
 | Env var | Default | Description |
 |---|---|---|
 | `IBKR_HOST` | `127.0.0.1` | IB Gateway / TWS host |
-| `IBKR_PORT` | `4002` | API port — IB Gateway: 4002 paper / 4001 live; TWS: 7497 paper / 7496 live |
+| `IBKR_PORT` | `4002` | API port — IB Gateway: 4002 paper / 4001 live; TWS: 7497 paper / 7496 live. If the configured port can't connect, the dashboard automatically falls through the other three standard ports. |
 | `IBKR_CLIENT_ID` | `1` | Must be unique per simultaneous API client |
 | `IBKR_READONLY` | `true` | Read-only API (recommended) |
 | `IBKR_RECONNECT_DELAY` | `5` | Base reconnect delay in seconds (exponential back-off) |
@@ -264,6 +266,8 @@ docker exec -it ibkrdash python -c "import yfinance as yf; print(yf.Ticker('AAPL
 ├── market_intel.py       Sector/geo exposure and earnings calendar (yfinance)
 ├── market_valuation.py   Macro indicators — Buffett, S&P 500 P/E, Shiller CAPE, 10-yr Treasury
 ├── trade_history.py      CSV upload path for historical trades
+├── coach.py              Rules-based Portfolio Coach scenarios (no network)
+├── ai_provider.py        Optional LLM layer — Anthropic / xAI / OpenAI (BYO key)
 ├── assets/
 │   └── custom.css        Dashboard CSS overrides
 ├── config.yaml           Default configuration

@@ -1,4 +1,18 @@
+"""
+Pure pandas transforms over raw IBKR positions.
+
+Takes the raw `positions` list + `market_data` dict from `ibkr_client`
+and enriches it with: pnl_pct, total_cost, allocation_pct, daily change,
+bid/ask spread, 52-week range position, volume, VWAP.
+
+No network, no state. Everything is deterministic given its inputs — so
+these functions are safe to call from any thread or from tests.
+"""
+
+from __future__ import annotations
+
 import pandas as pd
+
 
 def process_positions(positions, market_data=None):
     if not positions:

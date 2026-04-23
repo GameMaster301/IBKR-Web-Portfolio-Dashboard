@@ -18,6 +18,8 @@ There are no tests or linting commands configured. The app is validated by runni
 
 **IB Gateway prerequisite:** IB Gateway must be running with API enabled (Configure → Settings → API → Settings → Enable ActiveX and Socket Clients). Default port is **4002** (paper) or **4001** (live). TWS also works — use port 7497 (paper) or 7496 (live) and update `IBKR_PORT` accordingly.
 
+**Demo mode:** set `DEMO_MODE=1` before launch, or click "Try demo mode" on the disconnected start screen. In demo mode the IBKR background thread is not started — `fetch_all_data()` and `connection_status()` in `ibkr_client.py` short-circuit to the deterministic payload in `demo_data.py`. Toggle at runtime via `ibkr_client.set_demo_mode(True/False)`; the dashboard exposes this through the "Try demo mode" / "Exit demo" buttons.
+
 ## Architecture
 
 The app is a Plotly Dash single-page dashboard. One Python process runs two concurrent systems:
@@ -53,6 +55,33 @@ dcc.Interval('refresh-interval') ──► populate_valuation_data()
 
 `portfolio-data` is the central store — everything downstream depends on it. The market intel and valuation stores are cached for 4 hours internally (module-level dicts in `market_intel.py` and `market_valuation.py`).
 
+### Threading model
+
+Three long-lived threads plus short-lived per-callback pool workers:
+
+1. **MainThread** — creates an asyncio loop (required at import time by `eventkit`, transitively from `ib_async`), starts the IB thread, then blocks in `app.run()` serving HTTP.
+2. **`ib-async-loop`** (daemon) — single IB connection + its own asyncio loop. The ONLY thread that touches `ib_async` state.
+3. **Werkzeug worker pool** — every `@app.callback` runs on a worker here (Dash's default `app.run(threaded=True)`).
+
+Short-lived `ThreadPoolExecutor` pools are created per callback for parallel yfinance/HTTP fan-out (`populate_market_intel`, `populate_valuation_data`, and inside `market_intel`/`analytics`).
+
+**Cross-thread rules:**
+
+- Dash callback → IB: always go through `asyncio.run_coroutine_threadsafe(coro, _conn._loop)`. Never call `ib_async` methods directly from a callback.
+- Any thread → wake the IB reconnect loop: `_conn.request_retry()` uses `loop.call_soon_threadsafe`.
+- `fetch_all_data()` returns `None` on timeout, when a fetch is already in flight, or when disconnected — and cancels the dispatched coroutine on timeout so the IB loop doesn't accumulate stalled work. Every caller must tolerate `None` and wait for the next 60-second tick.
+
+**Shared state that's intentionally lock-free:**
+
+- `_demo_mode`, `_EVER_CONNECTED`, `_last_intel_tickers` — single-word assignments, safe under the GIL. Don't introduce compound updates (read-modify-write) on these without adding a lock first.
+- `cache_util` — `cached_fetch` serializes misses per-key via a single-flight lock; cache hits take the lock-free fast path. Downstream values are treated as immutable once written.
+
+**Known non-concerns (don't "fix" these):**
+
+- `_fetch_lock.acquire(blocking=False)` returning False is the correct response to overlapping fetches, not a bug.
+- Demo-mode toggles during an in-flight fetch self-heal on the next tick.
+- Nested `ThreadPoolExecutor` pools (outer 2-worker pool in `populate_market_intel` → inner 6-worker pools in `market_intel`) are intentional fan-out, not a deadlock risk — each pool has its own workers and no pool blocks on its parent.
+
 ### Module responsibilities
 
 | File | Role |
@@ -65,6 +94,8 @@ dcc.Interval('refresh-interval') ──► populate_valuation_data()
 | `market_intel.py` | yfinance-backed: price history, sector/geo, earnings — all 4h cached |
 | `market_valuation.py` | Macro indicators: Buffett (Wilshire/FRED GDP, World Bank fallback), S&P 500 P/E (multpl.com), Shiller CAPE (multpl.com), 10-yr Treasury yield (FRED) — 4h cached |
 | `trade_history.py` | CSV upload path for historical trades. `reqExecutions` only returns ~7 days, so users upload IBKR Client Portal Transaction History CSVs. Parsed trades are normalized to the live-trade dict shape and persisted to `data/uploaded_trades.json` (override dir via `IBKRDASH_DATA_DIR`). |
+| `coach.py` | Rules-based "Portfolio Coach" — 8 pure scenario functions that take the current stores (`portfolio-data`, `market-intel-data`, `valuation-data`) and return plain-English Dash children. No network. Registry exposed via `SCENARIOS` and dispatched with `render_scenario(id, port, intel, val)`. |
+| `ai_provider.py` | Optional LLM layer for the coach. Detects provider from the API-key prefix (`sk-ant-…` → Anthropic, `xai-…` → xAI Grok, `sk-…` → OpenAI), builds a compact portfolio-context JSON via `build_portfolio_context(...)`, and POSTs via `requests`. `LLM_PROMPTS` is the list of 6 deeper preset questions shown once a key is saved. |
 | `config.py` | Merges `config.yaml` defaults → env var overrides, exposes `cfg` dict |
 
 ### Key Dash patterns used
@@ -75,6 +106,7 @@ dcc.Interval('refresh-interval') ──► populate_valuation_data()
 - **`clientside_callback`** for keyboard shortcuts (R = refresh, Esc = close detail panel) to avoid round-trips.
 - **Pattern-matching callbacks** — per-position widgets use `{'type': 'position-trade-upload', 'index': 0}` and `{'type': 'position-close', 'index': 0}` IDs so the detail panel can mount transient controls without adding new top-level callbacks.
 - **Position detail panel** — clicking a holdings row triggers `show_position_detail`, which renders the slide-out panel with stats, a price sparkline, and a trade-history CSV uploader. The panel is a second callback surface separate from the main page layout.
+- **AI Coach panel** — "✨ Ask" button in the Holdings header toggles `coach-open`; a close button inside the panel also writes `coach-open=False`. The `render_coach` callback owns the full `coach-panel` children as one unified card (header + scenarios section + LLM section) based on four stores: `coach-open`, `coach-active-id`, `coach-api-key` (browser-only via `storage_type='local'`), `coach-chat-history`, plus the three data stores as State. Scenario dropdown always shows all 8 questions — picking one replaces the answer below (no progression/removal). When the panel isn't open, child components don't exist — all coach callbacks rely on `suppress_callback_exceptions=True`. LLM path runs synchronously inside `handle_llm`; progress is shown via `dcc.Loading` around the chat output.
 - **Parallel fetching** — `populate_market_intel` and `populate_valuation_data` both use `ThreadPoolExecutor` to fan out yfinance/HTTP calls concurrently. `populate_valuation_data` fetches 4 metrics in parallel: Buffett, S&P 500 P/E, Shiller CAPE, and 10-yr Treasury yield.
 
 ### Styling
@@ -83,10 +115,14 @@ All CSS customisation lives in `assets/custom.css`. Dash auto-serves everything 
 
 ### Caching layers
 
+All non-IB data flows through `cache_util.cached_fetch(key, ttl, fn)`, backed by
+`diskcache` at `<IBKRDASH_DATA_DIR or ./data>/cache/` so values survive process
+restarts. Falls back to an in-memory TTL dict if `diskcache` fails to import.
+
 - **`ibkr_client`**: no cache — every `fetch_all_data()` call hits TWS live (60-second interval is the throttle).
-- **`analytics.py` (`_div_cache`)**: per-ticker, 4 hours.
-- **`market_intel.py` (`_CACHE`)**: per-(tickers, period) key, 4 hours.
-- **`market_valuation.py` (`_CACHE`)**: per-metric key, 4 hours.
+- **`analytics.py`**: per-ticker dividend info, 4 hours.
+- **`market_intel.py`**: per-(tickers, period) key for prices / sector_geo / earnings, 4 hours.
+- **`market_valuation.py`**: per-metric key (buffett, sp500_pe, shiller_cape, treasury_yield), 4 hours.
 
 ### Configuration priority
 

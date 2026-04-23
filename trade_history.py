@@ -8,10 +8,13 @@ the IBKR Client Portal → Performance & Reports → Transaction History.
 Parsed trades are normalized into the same dict shape as live trades and
 persisted to `data/uploaded_trades.json` so they survive restarts.
 """
-import os
-import json
+
+from __future__ import annotations
+
 import csv
+import json
 import logging
+import os
 from datetime import datetime
 from io import StringIO
 

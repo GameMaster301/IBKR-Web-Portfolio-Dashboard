@@ -1,3 +1,12 @@
+/* Smooth-scroll breathing room: when dashboard.py's clientside callbacks
+   call scrollIntoView on these panels, leave ~120 px above them so the
+   panel doesn't land flush against the viewport edge — the section
+   header is visible above it, giving clear context for what just opened.
+   scroll-margin-top is the standardised, declarative way to do this. */
+#position-detail, #coach-panel {
+  scroll-margin-top: 220px;
+}
+
 /* Toast fade-out animation
    The toast div gets this class.
    It is visible for ~3 s, then fades + slides down over 0.4 s.
@@ -71,3 +80,18 @@
   animation: ibkrSpin 0.9s linear infinite;
   box-sizing: border-box;
 }
+
+/* Coach chat: thinking indicator dots + chip hover */
+@keyframes coachPulse {
+  0%, 60%, 100% { opacity: 0.25; }
+  30%           { opacity: 1; }
+}
+.coach-chat-output { scroll-behavior: smooth; }
+.coach-chip:hover {
+  background: #111 !important; color: #fff !important; border-color: #111 !important;
+}
+.coach-icon-btn:hover { color: #111 !important; background: #ececec !important; }
+.coach-send-btn:hover:not([disabled]) { background: #333 !important; }
+.coach-input-row input:focus { outline: none; border-color: #111 !important; }
+
+.coach-panel-card { box-sizing: border-box; }

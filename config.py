@@ -10,7 +10,10 @@ This means Docker deployments can drive everything from env vars without
 touching config.yaml, while local users keep the YAML-first workflow.
 """
 
+from __future__ import annotations
+
 import os
+
 import yaml
 
 # Allow config.yaml to live elsewhere (useful for Docker volume mounts).
@@ -35,6 +38,9 @@ _DEFAULTS: dict = {
     },
     'display': {
         'eurusd_fallback': 1.08,
+    },
+    'app': {
+        'demo_mode': False,
     },
 }
 
@@ -76,6 +82,10 @@ def _apply_env_overrides(cfg: dict) -> dict:
     # Display
     if env('EURUSD_FALLBACK'):
         cfg['display']['eurusd_fallback'] = float(env('EURUSD_FALLBACK'))
+
+    # App-wide
+    if env('DEMO_MODE'):
+        cfg['app']['demo_mode'] = env('DEMO_MODE', '').lower() in ('1', 'true', 'yes', 'on')
 
     return cfg
 

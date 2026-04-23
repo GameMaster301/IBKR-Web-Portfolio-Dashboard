@@ -13,29 +13,20 @@ All functions are cached 4 hours so repeated Dash renders never hit the
 network. Each returns None on failure so the UI can degrade gracefully.
 """
 
+from __future__ import annotations
+
 import json
 import logging
-import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 import pandas as pd
 
+from cache_util import cached_fetch
+
 log = logging.getLogger(__name__)
 
-_CACHE: dict = {}
-_TTL = 3600 * 4   # 4 hours
-
-
-def _cached(key, fn):
-    now = time.time()
-    if key in _CACHE:
-        ts, val = _CACHE[key]
-        if now - ts < _TTL:
-            return val
-    val = fn()
-    _CACHE[key] = (now, val)
-    return val
+_TTL = 3600 * 4   # 4 hours; backed by cache_util (diskcache, persists across restarts)
 
 
 # ── Zone classifiers ───────────────────────────────────────────────────────────
@@ -155,7 +146,9 @@ def get_buffett_indicator() -> dict | None:
         ]:
             try:
                 req = urllib.request.Request(fred_url, headers={'User-Agent': _UA})
-                with urllib.request.urlopen(req, timeout=15) as resp:
+                # Short timeout — FRED occasionally stalls and we'd rather fall
+                # back to World Bank than block the Market Valuation panel.
+                with urllib.request.urlopen(req, timeout=5) as resp:
                     raw = resp.read().decode('utf-8')
                 if raw.lstrip().startswith('<'):
                     raise ValueError('FRED returned HTML')
@@ -222,7 +215,7 @@ def get_buffett_indicator() -> dict | None:
         }
 
     try:
-        return _cached('buffett', fetch)
+        return cached_fetch('buffett', _TTL, fetch)
     except Exception as e:
         log.warning('Buffett indicator fetch failed: %s', e)
         return None
@@ -295,7 +288,7 @@ def get_sp500_pe() -> dict | None:
         }
 
     try:
-        return _cached('sp500_pe', fetch)
+        return cached_fetch('sp500_pe', _TTL, fetch)
     except Exception as e:
         log.warning('S&P 500 P/E fetch failed: %s', e)
         return None
@@ -366,7 +359,7 @@ def get_shiller_cape() -> dict | None:
         }
 
     try:
-        return _cached('shiller_cape', fetch)
+        return cached_fetch('shiller_cape', _TTL, fetch)
     except Exception as e:
         log.warning('Shiller CAPE fetch failed: %s', e)
         return None
@@ -391,7 +384,7 @@ def get_treasury_yield() -> dict | None:
         return {'value': value}
 
     try:
-        return _cached('treasury_yield', fetch)
+        return cached_fetch('treasury_yield', _TTL, fetch)
     except Exception as e:
         log.warning('Treasury yield fetch failed: %s', e)
         return None

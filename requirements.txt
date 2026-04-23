@@ -6,3 +6,4 @@ dash
 reportlab
 yfinance
 pyyaml
+diskcache
