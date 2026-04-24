@@ -20,10 +20,8 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional
 
 import requests
-
 
 SYSTEM_PROMPT = (
     "You are a friendly coach for a first-time investor. "
@@ -64,7 +62,7 @@ def _strip_followups(text: str) -> tuple[str, list[str]]:
 
 # ── Provider detection ────────────────────────────────────────────────────────
 
-def detect_provider(api_key: str) -> Optional[str]:
+def detect_provider(api_key: str) -> str | None:
     if not api_key:
         return None
     k = api_key.strip()

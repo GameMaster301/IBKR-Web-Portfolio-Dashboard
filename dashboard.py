@@ -49,10 +49,6 @@ from net_util import run_parallel
 from styles import (
     CARD,
     COLOR_BORDER,
-    COLOR_BRAND,
-    COLOR_BRAND_BORDER,
-    COLOR_TEXT_MUTED,
-    COLOR_TEXT_STRONG,
     LINK_PILL,
     TABLE_HEADER_CELL,
     TABLE_WRAPPER,
@@ -61,7 +57,6 @@ from styles import (
     TEXT_SECTION_LABEL,
 )
 from trade_history import (
-    clear_uploaded_trades,
     load_uploaded_trades,
     parse_activity_csv,
     save_uploaded_trades,
@@ -726,11 +721,11 @@ def update_donut(data):
 def export_pdf(_, data):
     if not data or 'positions' not in data:
         return no_update
-    from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     df = pd.DataFrame(data['positions'])
     s = data.get('summary', {})
@@ -1612,7 +1607,7 @@ def _render_sector_geo_inner(intel, port_data):
     sec_colors = [colors[i % len(colors)] for i in range(len(sec_labels))]
     # Color lookup shared between the donut and the legend so matching
     # sectors always use the same dot color.
-    color_by_sec = dict(zip(sec_labels, sec_colors))
+    color_by_sec = dict(zip(sec_labels, sec_colors, strict=True))
 
     # Portfolio total for the donut center label.
     # market_value comes from IBKR in USD for US positions — convert to EUR
@@ -2351,7 +2346,7 @@ def _render_market_valuation_inner(data):
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # Single unified panel shown below Holdings when the ✨ Ask button is clicked.
-# Top section: 8 rules-based scenarios from coach.py — pure Python, no network.
+# Top section: 5 rules-based scenarios from coach.py — pure Python, no network.
 # Bottom section: optional API key unlocks 6 deeper preset questions + a
 # free-form "ask anything" input. Key stored in browser localStorage only.
 
@@ -2773,7 +2768,7 @@ def run_llm(question, key, threads, active_id, port, intel, val):
                             'a': f"Couldn't reach the provider: {type(e).__name__}: {e}",
                             'error': True})
         return _commit_and_return(history)
-    except Exception as e:
+    except Exception:
         log.exception("coach.run_llm crashed")
         # Return a safe state so the UI unsticks from "Thinking…"
         return no_update, no_update, None, False, False, "Send ↑"

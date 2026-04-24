@@ -16,9 +16,7 @@ shown elsewhere on the dashboard.
 
 from __future__ import annotations
 
-from datetime import date, datetime
 from dash import html
-
 
 # ── Presentation helpers ──────────────────────────────────────────────────────
 

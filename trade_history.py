@@ -77,7 +77,7 @@ def parse_activity_csv(content: bytes) -> list:
         if len(row) < 2 or row[1] != 'Data' or not header:
             continue
 
-        d = dict(zip(header, row))
+        d = dict(zip(header, row, strict=False))
         disc = (d.get('DataDiscriminator') or '').strip()
         if disc and disc not in ('Order', 'Trade'):
             continue   # skip SubTotal / Total rows
@@ -115,7 +115,7 @@ def load_uploaded_trades() -> list:
     if not os.path.exists(_STORE_PATH):
         return []
     try:
-        with open(_STORE_PATH, 'r', encoding='utf-8') as f:
+        with open(_STORE_PATH, encoding='utf-8') as f:
             data = json.load(f)
             return data if isinstance(data, list) else []
     except Exception as e:

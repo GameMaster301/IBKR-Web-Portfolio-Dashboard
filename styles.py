@@ -21,7 +21,6 @@ TABLE_*   — shared table header / cell styling
 
 from __future__ import annotations
 
-
 # ── Palette ───────────────────────────────────────────────────────────────────
 # Use these names instead of raw hex in dashboard.py. When you want to tweak
 # a tone globally, change it here.

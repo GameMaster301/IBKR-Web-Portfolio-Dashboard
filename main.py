@@ -12,6 +12,7 @@ from __future__ import annotations
 
 # asyncio loop must be created before any ib_async-touching import below.
 import asyncio
+
 asyncio.set_event_loop(asyncio.new_event_loop())
 
 import logging

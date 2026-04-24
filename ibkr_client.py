@@ -139,7 +139,7 @@ class _IBKRConnection:
             return
         try:
             await asyncio.wait_for(evt.wait(), timeout=delay)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
         evt.clear()
 
@@ -249,7 +249,7 @@ class _IBKRConnection:
                     disc_event.wait(), timeout=interval)
                 # disc_event fired inside wait_for → exit
                 return
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass   # interval elapsed, time to ping
 
             if not ib.isConnected():

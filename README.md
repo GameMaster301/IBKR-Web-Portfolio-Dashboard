@@ -2,6 +2,7 @@
 
 A real-time, private portfolio dashboard for Interactive Brokers — built with Python and Plotly Dash. Connects directly to **IB Gateway or TWS** via the `ib_async` API. No third-party data providers for live prices, no delays, read-only.
 
+[![checks](https://github.com/GameMaster301/IBKR-Web-Portfolio-Dashboard/actions/workflows/checks.yml/badge.svg)](https://github.com/GameMaster301/IBKR-Web-Portfolio-Dashboard/actions/workflows/checks.yml)
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat&logo=python&logoColor=white)
 ![Dash](https://img.shields.io/badge/Plotly_Dash-2.x-119DFF?style=flat&logo=plotly&logoColor=white)
 ![ib_async](https://img.shields.io/badge/ib__async-latest-orange?style=flat)
@@ -44,7 +45,7 @@ Download the **[latest release zip](https://github.com/GameMaster301/IBKR-Web-Po
 - **Market Intelligence** — sector & geography exposure, earnings calendar with historical 1-day post-earnings moves
 - **Dividends tracker** — yield per position, projected annual income, upcoming payment schedule
 - **Historical trades** — click a holding to open its detail panel, then upload a Transaction History CSV (IBKR Client Portal → Performance & Reports → Transaction History). BUY/SELL markers are overlaid on the per-position price chart.
-- **Portfolio Coach** — "✨ Ask coach" button on the Holdings card opens a chat panel. Works with zero config: 8 rules-based scenarios (performance, biggest risk, what-if, sector/geo, earnings watch, vs market, currency exposure, winners & losers) answered in plain English using only your live portfolio data. Optionally paste an Anthropic / xAI / OpenAI key (auto-detected from the prefix, stored in browser localStorage only — never uploaded) to unlock free-form chat with multi-thread tabs, edit/regenerate, per-position "Ask coach about {ticker}" shortcuts, and a resizable panel.
+- **Portfolio Coach** — "✨ Ask coach" button on the Holdings card opens a chat panel. Works with zero config: 5 rules-based scenarios (performance, biggest risk, what-if, sector/geo, vs market) answered in plain English using only your live portfolio data. Optionally paste an Anthropic / xAI / OpenAI key (auto-detected from the prefix, stored in browser localStorage only — never uploaded) to unlock free-form chat with multi-thread tabs, edit/regenerate, per-position "Ask coach about {ticker}" shortcuts, and a resizable panel.
 - **PDF export** — one-click portfolio snapshot download
 - **Auto-reconnect** — exponential back-off with passive heartbeat; dashboard keeps working while IB Gateway or TWS is restarting
 - **Demo mode** — no TWS? Click **Try demo mode** on the start screen (or set `DEMO_MODE=1`) to explore the full dashboard against a deterministic sample portfolio. All features work, including the Coach and market intel charts.

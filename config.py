@@ -93,7 +93,7 @@ def _apply_env_overrides(cfg: dict) -> dict:
 def load_config() -> dict:
     cfg = _DEFAULTS
     if os.path.exists(_CONFIG_PATH):
-        with open(_CONFIG_PATH, 'r') as f:
+        with open(_CONFIG_PATH) as f:
             user_cfg = yaml.safe_load(f) or {}
         cfg = _deep_merge(_DEFAULTS, user_cfg)
     cfg = _apply_env_overrides(cfg)

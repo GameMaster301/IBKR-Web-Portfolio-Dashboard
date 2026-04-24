@@ -108,8 +108,9 @@ def get_buffett_indicator() -> dict | None:
     _UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 
     def fetch():
-        import yfinance as yf
         import io
+
+        import yfinance as yf
 
         # Wilshire 5000 Full Cap index — index level ≈ US total equity market
         # cap in billions of USD (Wilshire Associates convention).

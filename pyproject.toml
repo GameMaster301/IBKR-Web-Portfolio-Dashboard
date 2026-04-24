@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 110
+target-version = 'py311'
+
+[tool.ruff.lint]
+select = ['E', 'F', 'W', 'I', 'UP', 'B']
+# E501  long lines allowed in data literals
+# E731  lambda assignments are used as compact helpers
+# E701/E702  compact one-line `if x: return ...` is deliberate in zone
+#            classifiers and coach scenarios
+# E402  main.py creates the asyncio loop before importing modules that
+#       (transitively) import eventkit at module load
+ignore = ['E501', 'E731', 'E701', 'E702', 'E402']

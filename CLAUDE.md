@@ -94,7 +94,7 @@ Short-lived `ThreadPoolExecutor` pools are created per callback for parallel yfi
 | `market_intel.py` | yfinance-backed: price history, sector/geo, earnings — all 4h cached |
 | `market_valuation.py` | Macro indicators: Buffett (Wilshire/FRED GDP, World Bank fallback), S&P 500 P/E (multpl.com), Shiller CAPE (multpl.com), 10-yr Treasury yield (FRED) — 4h cached |
 | `trade_history.py` | CSV upload path for historical trades. `reqExecutions` only returns ~7 days, so users upload IBKR Client Portal Transaction History CSVs. Parsed trades are normalized to the live-trade dict shape and persisted to `data/uploaded_trades.json` (override dir via `IBKRDASH_DATA_DIR`). |
-| `coach.py` | Rules-based "Portfolio Coach" — 8 pure scenario functions that take the current stores (`portfolio-data`, `market-intel-data`, `valuation-data`) and return plain-English Dash children. No network. Registry exposed via `SCENARIOS` and dispatched with `render_scenario(id, port, intel, val)`. |
+| `coach.py` | Rules-based "Portfolio Coach" — 5 pure scenario functions (perf, biggest_risk, what_if, sector_geo, vs_market) that take the current stores (`portfolio-data`, `market-intel-data`, `valuation-data`) and return plain-English Dash children. No network. Registry exposed via `SCENARIOS` and dispatched with `render_scenario(id, port, intel, val)`. |
 | `ai_provider.py` | Optional LLM layer for the coach. Detects provider from the API-key prefix (`sk-ant-…` → Anthropic, `xai-…` → xAI Grok, `sk-…` → OpenAI), builds a compact portfolio-context JSON via `build_portfolio_context(...)`, and POSTs via `requests`. `LLM_PROMPTS` is the list of 6 deeper preset questions shown once a key is saved. |
 | `config.py` | Merges `config.yaml` defaults → env var overrides, exposes `cfg` dict |
 

@@ -331,8 +331,9 @@ def get_earnings_data(tickers: list) -> dict:
     {ticker: {'next_date': str|None, 'avg_1d_move': float|None,
               'last_1d_moves': [float, ...]}}
     """
-    import yfinance as yf
     from datetime import datetime
+
+    import yfinance as yf
 
     key = ('earnings', tuple(sorted(tickers)))
 

@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable, Hashable, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Hashable, Iterable, TypeVar
+from typing import TypeVar
 
 log = logging.getLogger(__name__)
 

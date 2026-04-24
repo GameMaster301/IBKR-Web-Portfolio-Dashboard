@@ -1,9 +1,13 @@
-ib_async
-pandas
-numpy
-plotly
-dash
-reportlab
-yfinance
-pyyaml
-diskcache
+# Pinned to known-good ranges for Python 3.11 (CI target).
+# Major versions are locked; patch updates allowed.
+# yfinance is pinned tighter because its API changes frequently.
+
+ib_async>=2.0,<3
+pandas>=2.2,<3
+numpy>=1.26,<3
+plotly>=5.20,<7
+dash>=2.18,<4
+reportlab>=4.0,<5
+yfinance~=0.2.40
+pyyaml>=6.0,<7
+diskcache>=5.6,<6
