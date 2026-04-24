@@ -73,7 +73,12 @@ Short-lived `ThreadPoolExecutor` pools are created per callback for parallel yfi
 
 **Shared state that's intentionally lock-free:**
 
-- `_demo_mode`, `_EVER_CONNECTED`, `_last_intel_tickers` — single-word assignments, safe under the GIL. Don't introduce compound updates (read-modify-write) on these without adding a lock first.
+- `_demo_mode` (`ibkr_client`) — toggles demo mode at runtime; single boolean, GIL-safe.
+- `_EVER_CONNECTED` (`dashboard_core/data_callbacks`) — set to `True` the first time a fetch returns data. Used together with `_APP_START` to distinguish "still connecting on startup" from "genuinely disconnected" so the UI shows "Connecting…" for the first 25 s instead of the red disconnected banner.
+- `_APP_START` (`dashboard_core/data_callbacks`) — `time.time()` captured at module import. Read-only after init; no mutation risk.
+- `_last_intel_tickers` (`dashboard_core/intel`) — tuple of sorted ticker symbols from the last successful market-intel fetch. Guards `populate_market_intel` against re-fetching when the holdings haven't changed.
+
+All four are single-word assignments (bool / float / tuple / None), safe under the GIL. Don't introduce compound read-modify-write updates on any of them without adding a lock first.
 - `cache_util` — `cached_fetch` serializes misses per-key via a single-flight lock; cache hits take the lock-free fast path. Downstream values are treated as immutable once written.
 
 **Known non-concerns (don't "fix" these):**
@@ -88,7 +93,16 @@ Short-lived `ThreadPoolExecutor` pools are created per callback for parallel yfi
 |---|---|
 | `main.py` | Entry point — starts IB thread, opens browser, starts Dash server |
 | `ibkr_client.py` | IB connection singleton, `fetch_all_data()` coroutine (positions, market data, dividends, EUR/USD, daily P&L) |
-| `dashboard.py` | All Dash layout and callbacks (~2000 lines) — the core of the UI |
+| `dashboard.py` | ~30-line orchestrator: creates `app`, calls `build_layout`, calls each module's `register(app)` |
+| `dashboard_core/layout.py` | Full `app.layout` HTML/dcc tree — `build_layout(refresh_ms)` |
+| `dashboard_core/data_callbacks.py` | `fetch_data`, `update_status`, retry/demo toggles, keyboard shortcut clientside callback |
+| `dashboard_core/summary.py` | Summary cards, holdings DataTable, allocation donut, dividends panel |
+| `dashboard_core/detail.py` | Position detail slide-out: stats, 52w range bar, price sparkline, trade CSV upload |
+| `dashboard_core/intel.py` | Toast, `populate_market_intel` store, sector/geo charts, earnings calendar |
+| `dashboard_core/valuation.py` | `populate_valuation_data` store, Buffett/CAPE/P-E/Treasury render |
+| `dashboard_core/coach_ui.py` | AI Coach panel: thread list, chat history, preset scenarios, LLM integration |
+| `dashboard_core/export.py` | PDF export callback (lazy reportlab import) |
+| `dashboard_core/helpers.py` | Shared helpers: `section_label`, `make_table`, `badge`, `status_banner`, `to_eur`, `EURUSD_FALLBACK` |
 | `data_processor.py` | Pure pandas transforms: enriches raw positions with daily change, spread, 52w range, allocation % |
 | `analytics.py` | `get_dividend_data_yf()` — yfinance dividend fallback with 4h cache and parallel fetching |
 | `market_intel.py` | yfinance-backed: price history, sector/geo, earnings — all 4h cached |

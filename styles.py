@@ -36,6 +36,10 @@ COLOR_WARN_BG        = '#fffbeb'   # pale amber panel background
 COLOR_WARN_BORDER    = '#fde68a'
 COLOR_WARN_DEEP      = '#92400e'
 COLOR_BAD            = '#dc2626'   # red — negative P&L, overvalued
+COLOR_BAD_DEEP       = '#991b1b'   # deep red — high-contrast text on light backgrounds
+COLOR_BAD_BG         = '#fef2f2'   # pale red panel background
+COLOR_GOOD_DEEP      = '#166534'   # deep green — high-contrast text on light backgrounds
+COLOR_GOOD_MEDIUM    = '#bbf7d0'   # pale green highlight / chip background
 COLOR_BRAND          = '#378ADD'   # IBKR-style blue — links, primary actions
 COLOR_BRAND_BORDER   = '#cfe0f5'
 
@@ -46,6 +50,7 @@ COLOR_TEXT_SLATE     = '#374151'   # tailwind gray-700
 COLOR_TEXT_MID       = '#555'      # secondary text
 COLOR_TEXT_DIM       = '#666'      # table headers, labels
 COLOR_TEXT_MUTED     = '#888'      # tertiary / hint text
+COLOR_TEXT_SEMI      = '#777'      # between mid and muted
 COLOR_TEXT_FAINT     = '#999'
 COLOR_TEXT_GHOST     = '#bbb'      # disabled, placeholder
 COLOR_SURFACE_WHITE  = '#fff'
@@ -134,5 +139,5 @@ TABLE_WRAPPER: dict = {
 
 BADGE_GOOD: tuple   = (COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD)
 BADGE_WARN: tuple   = (COLOR_WARN, COLOR_WARN_BG, COLOR_WARN_BORDER)
-BADGE_BAD: tuple    = (COLOR_BAD,  '#fef2f2',    COLOR_BAD)
+BADGE_BAD: tuple    = (COLOR_BAD,  COLOR_BAD_BG, COLOR_BAD)
 BADGE_NEUTRAL: tuple = (COLOR_TEXT_MID, COLOR_SURFACE_SOFT, COLOR_BORDER)

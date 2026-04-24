@@ -26,6 +26,21 @@ from ibkr_client import (
     request_retry,
     set_demo_mode,
 )
+from styles import (
+    COLOR_BAD,
+    COLOR_BAD_BG,
+    COLOR_BORDER_STRONG,
+    COLOR_GOOD,
+    COLOR_GOOD_BG,
+    COLOR_GOOD_MEDIUM,
+    COLOR_SURFACE,
+    COLOR_SURFACE_SOFT,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_STRONG,
+    COLOR_WARN_BG,
+    COLOR_WARN_BORDER,
+    COLOR_WARN_DEEP,
+)
 
 # Startup grace period: during the first ~25 s after launch we show a
 # "Connecting …" spinner instead of "Disconnected" — the IB thread needs a
@@ -149,32 +164,32 @@ def register(app):
             banner = html.Div([
                 spinner,
                 html.P(title, style={'fontSize': '17px', 'fontWeight': '600',
-                                     'color': '#111', 'margin': '0 0 6px'}),
-                html.P(body, style={'fontSize': '15px', 'color': '#888',
+                                     'color': COLOR_TEXT_STRONG, 'margin': '0 0 6px'}),
+                html.P(body, style={'fontSize': '15px', 'color': COLOR_TEXT_MUTED,
                                     'margin': '0', 'lineHeight': '1.6'}),
             ], style={'textAlign': 'center', 'padding': '48px 32px',
-                      'background': '#fafafa', 'borderRadius': '14px',
+                      'background': COLOR_SURFACE_SOFT, 'borderRadius': '14px',
                       'border': '0.5px solid #ebebeb'})
-            return banner, badge("Connecting...", '#888', '#f5f5f5', '#e0e0e0'), "", retry_hidden, exit_demo_hidden
+            return banner, badge("Connecting...", COLOR_TEXT_MUTED, COLOR_SURFACE, COLOR_BORDER_STRONG), "", retry_hidden, exit_demo_hidden
 
         if status == 'disconnected':
             return status_banner("🔌", "Not connected to IBKR",
                                  "Make sure IB Gateway or TWS is open and logged in — the dashboard auto-detects the port and reconnects automatically.\n"
                                  "IB Gateway: Configure → Settings → API → Settings → Enable ActiveX and Socket Clients (Port 4002 paper / 4001 live).\n"
                                  "TWS: Edit → Global Configuration → API → Settings → Enable ActiveX and Socket Clients (Port 7497 paper / 7496 live).",
-                                 '#fef2f2'), \
-                   badge("● Disconnected", '#dc2626', '#fef2f2', '#fecaca'), ts, retry_shown, exit_demo_hidden
+                                 COLOR_BAD_BG), \
+                   badge("● Disconnected", COLOR_BAD, COLOR_BAD_BG, '#fecaca'), ts, retry_shown, exit_demo_hidden
 
         if status == 'no_positions':
-            conn_badge = (badge("● Demo mode", '#92400e', '#fffbeb', '#fcd34d') if demo
-                          else badge("● Connected", '#16a34a', '#f0fdf4', '#bbf7d0'))
+            conn_badge = (badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER) if demo
+                          else badge("● Connected", COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD_MEDIUM))
             return status_banner("📭", "No positions found",
-                                 "Connected to IBKR successfully, but your account has no open positions.", '#fafafa'), \
+                                 "Connected to IBKR successfully, but your account has no open positions.", COLOR_SURFACE_SOFT), \
                    conn_badge, ts, retry_hidden, (exit_demo_shown if demo else exit_demo_hidden)
 
         if demo:
-            return None, badge("● Demo mode", '#92400e', '#fffbeb', '#fcd34d'), ts, retry_hidden, exit_demo_shown
-        return None, badge(f"● Live · {_REFRESH_MS // 1000}s", '#16a34a', '#f0fdf4', '#bbf7d0'), ts, retry_hidden, exit_demo_hidden
+            return None, badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER), ts, retry_hidden, exit_demo_shown
+        return None, badge(f"● Live · {_REFRESH_MS // 1000}s", COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD_MEDIUM), ts, retry_hidden, exit_demo_hidden
 
     @app.callback(
         Output('connection-status', 'data', allow_duplicate=True),

@@ -14,6 +14,16 @@ from dash import Input, Output, State, dcc, no_update
 
 from dashboard_core.helpers import EURUSD_FALLBACK
 from ibkr_client import is_demo_mode
+from styles import (
+    COLOR_BAD_DEEP,
+    COLOR_BORDER_STRONG,
+    COLOR_GOOD_DEEP,
+    COLOR_SURFACE,
+    COLOR_SURFACE_SOFT,
+    COLOR_WARN_BG,
+    COLOR_WARN_BORDER,
+    COLOR_WARN_DEEP,
+)
 
 
 def register(app):
@@ -58,9 +68,9 @@ def register(app):
             story.append(Paragraph(
                 "Sample portfolio — not real trading data.",
                 ParagraphStyle('demo', parent=styles['Normal'], fontSize=9,
-                               textColor=colors.HexColor('#92400e'),
-                               backColor=colors.HexColor('#fffbeb'),
-                               borderColor=colors.HexColor('#fcd34d'),
+                               textColor=colors.HexColor(COLOR_WARN_DEEP),
+                               backColor=colors.HexColor(COLOR_WARN_BG),
+                               borderColor=colors.HexColor(COLOR_WARN_BORDER),
                                borderWidth=0.5, borderPadding=6,
                                spaceAfter=12)))
 
@@ -79,12 +89,12 @@ def register(app):
         ]
         t = Table(summary_data, colWidths=[80*mm, 40*mm, 40*mm])
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f5f5')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(COLOR_SURFACE)),
             ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE',   (0, 0), (-1, -1), 9),
             ('ALIGN',      (1, 0), (-1, -1), 'RIGHT'),
-            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#e0e0e0')),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fafafa')]),
+            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor(COLOR_BORDER_STRONG)),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor(COLOR_SURFACE_SOFT)]),
             ('TOPPADDING',  (0, 0), (-1, -1), 5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
@@ -104,13 +114,13 @@ def register(app):
         ]
         pt = Table(perf_data, colWidths=[82*mm, 82*mm])
         pt.setStyle(TableStyle([
-            ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor('#f5f5f5')),
+            ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor(COLOR_SURFACE)),
             ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE',      (0, 0), (-1, -1), 9),
             ('ALIGN',         (0, 0), (-1, -1), 'CENTER'),
-            ('GRID',          (0, 0), (-1, -1), 0.25, colors.HexColor('#e0e0e0')),
-            ('TEXTCOLOR',     (0, 1), (0, 1), colors.HexColor('#166534')),  # best = green
-            ('TEXTCOLOR',     (1, 1), (1, 1), colors.HexColor('#991b1b')),  # worst = red
+            ('GRID',          (0, 0), (-1, -1), 0.25, colors.HexColor(COLOR_BORDER_STRONG)),
+            ('TEXTCOLOR',     (0, 1), (0, 1), colors.HexColor(COLOR_GOOD_DEEP)),  # best = green
+            ('TEXTCOLOR',     (1, 1), (1, 1), colors.HexColor(COLOR_BAD_DEEP)),  # worst = red
             ('FONTNAME',      (0, 1), (-1, 1), 'Helvetica-Bold'),
             ('TOPPADDING',    (0, 0), (-1, -1), 5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
@@ -138,23 +148,23 @@ def register(app):
         ht = Table(hold_data, colWidths=[20*mm, 12*mm, 22*mm, 22*mm, 16*mm, 26*mm, 16*mm, 16*mm])
         # colour positive/negative day % and P&L % cells per row
         ht_style = [
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f5f5')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(COLOR_SURFACE)),
             ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE',   (0, 0), (-1, -1), 8),
             ('ALIGN',      (1, 0), (-1, -1), 'RIGHT'),
             ('ALIGN',      (0, 0), (0, -1), 'LEFT'),
-            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#e0e0e0')),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fafafa')]),
+            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor(COLOR_BORDER_STRONG)),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor(COLOR_SURFACE_SOFT)]),
             ('TOPPADDING',  (0, 0), (-1, -1), 4),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ]
         for i, row in enumerate(df.itertuples(), start=1):
             day_pct = getattr(row, 'daily_change_pct', None)
             if day_pct is not None and pd.notna(day_pct):
-                col = colors.HexColor('#166534') if day_pct >= 0 else colors.HexColor('#991b1b')
+                col = colors.HexColor(COLOR_GOOD_DEEP) if day_pct >= 0 else colors.HexColor(COLOR_BAD_DEEP)
                 ht_style.append(('TEXTCOLOR', (4, i), (4, i), col))
             pnl = getattr(row, 'pnl_pct', 0) or 0
-            col = colors.HexColor('#166534') if pnl >= 0 else colors.HexColor('#991b1b')
+            col = colors.HexColor(COLOR_GOOD_DEEP) if pnl >= 0 else colors.HexColor(COLOR_BAD_DEEP)
             ht_style.append(('TEXTCOLOR', (6, i), (6, i), col))
         ht.setStyle(TableStyle(ht_style))
         story.append(ht)

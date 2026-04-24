@@ -26,7 +26,21 @@ from decorators import NotReadyError, safe_render
 from market_intel import get_earnings_data, get_sector_geo
 from net_util import run_parallel
 from schemas import MarketIntelData, PortfolioData
-from styles import CARD
+from styles import (
+    CARD,
+    COLOR_BAD,
+    COLOR_BRAND,
+    COLOR_GOOD_SOFT,
+    COLOR_SURFACE_WHITE,
+    COLOR_TEXT,
+    COLOR_TEXT_GHOST,
+    COLOR_TEXT_MID,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_STRONG,
+    COLOR_WARN,
+    COLOR_WARN_SOFT,
+    COLOR_WARN_YELLOW,
+)
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +79,7 @@ def register(app):
             key=str(time.time()),
             className='toast-msg',
             style={
-                'background': '#111', 'color': '#fff',
+                'background': COLOR_TEXT_STRONG, 'color': COLOR_SURFACE_WHITE,
                 'padding': '10px 18px', 'borderRadius': '12px',
                 'fontSize': '15px', 'fontWeight': '500',
                 'letterSpacing': '0.01em',
@@ -177,8 +191,8 @@ def _render_sector_geo_inner(intel: MarketIntelData | None, port_data: Portfolio
     sec_labels = [s[0] for s in sec_full_sorted]
     sec_values = [s[1] for s in sec_full_sorted]
 
-    colors = ['#378ADD', '#f97316', '#a855f7', '#22c55e',
-              '#eab308', '#ec4899', '#14b8a6', '#6366f1',
+    colors = [COLOR_BRAND, COLOR_WARN_SOFT, '#a855f7', COLOR_GOOD_SOFT,
+              COLOR_WARN_YELLOW, '#ec4899', '#14b8a6', '#6366f1',
               '#84cc16', '#ef4444', '#06b6d4']
     sec_colors = [colors[i % len(colors)] for i in range(len(sec_labels))]
     color_by_sec = dict(zip(sec_labels, sec_colors, strict=True))
@@ -220,8 +234,8 @@ def _render_sector_geo_inner(intel: MarketIntelData | None, port_data: Portfolio
     cty_labels = [c[0] for c in cty_sorted]
     cty_values = [c[1] / total * 100 for c in cty_sorted]
 
-    country_colors = ['#378ADD', '#22c55e', '#f97316', '#a855f7',
-                      '#eab308', '#ec4899', '#14b8a6', '#6366f1']
+    country_colors = [COLOR_BRAND, COLOR_GOOD_SOFT, COLOR_WARN_SOFT, '#a855f7',
+                      COLOR_WARN_YELLOW, '#ec4899', '#14b8a6', '#6366f1']
 
     if len(cty_labels) <= 2:
         bar = go.Figure(go.Pie(
@@ -241,18 +255,18 @@ def _render_sector_geo_inner(intel: MarketIntelData | None, port_data: Portfolio
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             height=200,
             annotations=[dict(text=center_text, x=0.5, y=0.5,
-                              font=dict(size=20, color='#333'),
+                              font=dict(size=20, color=COLOR_TEXT),
                               showarrow=False)] if center_text else [],
         )
     else:
         bar = go.Figure(go.Bar(
             x=cty_values, y=cty_labels,
             orientation='h',
-            marker=dict(color='#378ADD', opacity=0.75),
+            marker=dict(color=COLOR_BRAND, opacity=0.75),
             hovertemplate='%{y}: <b>%{x:.1f}%</b><extra></extra>',
             text=[f'{v:.1f}%' for v in cty_values],
             textposition='outside',
-            textfont=dict(size=11, color='#555'),
+            textfont=dict(size=11, color=COLOR_TEXT_MID),
         ))
         bar.update_layout(
             margin=dict(t=0, b=0, l=0, r=80),
@@ -291,9 +305,9 @@ def _render_sector_geo_inner(intel: MarketIntelData | None, port_data: Portfolio
             html.Td(sec,         style={'padding': '6px 12px 6px 0',
                                         'fontSize': '15px', 'fontWeight': '500'}),
             html.Td(f'{pct:.1f}%', style={'padding': '6px 12px', 'textAlign': 'right',
-                                           'fontSize': '15px', 'color': '#555'}),
+                                           'fontSize': '15px', 'color': COLOR_TEXT_MID}),
             html.Td(tickers_str,   style={'padding': '6px 0', 'fontSize': '14px',
-                                           'color': '#888'}),
+                                           'color': COLOR_TEXT_MUTED}),
         ], style={'borderTop': '0.5px solid #f5f5f5'}))
 
     sector_legend = html.Table(
@@ -307,14 +321,14 @@ def _render_sector_geo_inner(intel: MarketIntelData | None, port_data: Portfolio
         section_label("Sector & Geography Exposure"),
         html.Div([
             html.Div([
-                html.P("Sector", style={'fontSize': '14px', 'color': '#555',
+                html.P("Sector", style={'fontSize': '14px', 'color': COLOR_TEXT_MID,
                                         'textTransform': 'uppercase',
                                         'letterSpacing': '0.04em', 'margin': '0 0 8px'}),
                 dcc.Graph(figure=donut, config={'displayModeBar': False}),
             ], style={'flex': '2', 'minWidth': '200px'}),
 
             html.Div([
-                html.P("Country", style={'fontSize': '14px', 'color': '#555',
+                html.P("Country", style={'fontSize': '14px', 'color': COLOR_TEXT_MID,
                                           'textTransform': 'uppercase',
                                           'letterSpacing': '0.04em',
                                           'margin': '0 0 8px'}),
@@ -362,7 +376,7 @@ def _render_earnings_inner(intel: MarketIntelData | None, port_data: PortfolioDa
         return html.Div(
             html.P("No upcoming earnings dates found — holdings may be ETFs or "
                    "data is unavailable.",
-                   style={'fontSize': '15px', 'color': '#bbb',
+                   style={'fontSize': '15px', 'color': COLOR_TEXT_GHOST,
                           'textAlign': 'center', 'padding': '24px 0'}),
             style=CARD)
 
@@ -381,23 +395,23 @@ def _render_earnings_inner(intel: MarketIntelData | None, port_data: PortfolioDa
 
         if days < 0:
             days_str  = f"{abs(days)}d ago"
-            days_color = '#bbb'
+            days_color = COLOR_TEXT_GHOST
         elif days == 0:
             days_str  = 'Today'
-            days_color = '#dc2626'
+            days_color = COLOR_BAD
         else:
             days_str  = f'in {days}d'
-            days_color = '#dc2626' if imminent else ('#b45309' if soon else '#888')
+            days_color = COLOR_BAD if imminent else (COLOR_WARN if soon else COLOR_TEXT_MUTED)
 
         weight_str = f"{r['weight']:.1f}%"
         row_bg     = '#fff8f0' if imminent else 'transparent'
 
         table_rows.append(html.Tr([
             td_l(html.Span(r['ticker'], style={'fontWeight': '600'})),
-            td_r(r['next_date'], color='#555'),
+            td_r(r['next_date'], color=COLOR_TEXT_MID),
             td_r(days_str,       color=days_color,
                  fontWeight='600' if imminent else '400'),
-            td_r(weight_str,     color='#555'),
+            td_r(weight_str,     color=COLOR_TEXT_MID),
         ], style={'borderTop': '0.5px solid #f5f5f5',
                   'backgroundColor': row_bg}))
 

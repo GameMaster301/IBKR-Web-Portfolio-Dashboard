@@ -5,7 +5,17 @@ from __future__ import annotations
 from dash import dcc, html
 
 from dashboard_core.helpers import section_label
-from styles import CARD
+from styles import (
+    CARD,
+    COLOR_BAD,
+    COLOR_SURFACE,
+    COLOR_SURFACE_WHITE,
+    COLOR_TEXT_MID,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_STRONG,
+    COLOR_WARN_BG,
+    COLOR_WARN_DEEP,
+)
 from trade_history import load_uploaded_trades
 
 
@@ -16,14 +26,14 @@ def build_layout(refresh_ms: int) -> html.Div:
         html.Div([
             html.Div([
                 html.Div([
-                    html.H1("Portfolio", style={'margin': '0', 'fontSize': '22px', 'fontWeight': '600', 'color': '#111'}),
-                    html.P(id='last-updated', style={'margin': '4px 0 0', 'color': '#888', 'fontSize': '14px'}),
+                    html.H1("Portfolio", style={'margin': '0', 'fontSize': '22px', 'fontWeight': '600', 'color': COLOR_TEXT_STRONG}),
+                    html.P(id='last-updated', style={'margin': '4px 0 0', 'color': COLOR_TEXT_MUTED, 'fontSize': '14px'}),
                 ]),
                 html.Div([
                     html.Div(id='connection-badge'),
                     html.Div(
                         html.Button("Exit demo", id='exit-demo-btn', n_clicks=0, style={
-                            'fontSize': '13px', 'color': '#92400e', 'background': '#fffbeb',
+                            'fontSize': '13px', 'color': COLOR_WARN_DEEP, 'background': COLOR_WARN_BG,
                             'border': '0.5px solid #fcd34d', 'borderRadius': '8px',
                             'padding': '6px 12px', 'cursor': 'pointer',
                         }),
@@ -31,7 +41,7 @@ def build_layout(refresh_ms: int) -> html.Div:
                         style={'display': 'none'},
                     ),
                     html.Button("↓ PDF", id='export-pdf-btn', n_clicks=0, style={
-                        'fontSize': '13px', 'color': '#555', 'background': '#f5f5f5',
+                        'fontSize': '13px', 'color': COLOR_TEXT_MID, 'background': COLOR_SURFACE,
                         'border': '0.5px solid #ddd', 'borderRadius': '8px',
                         'padding': '6px 14px', 'cursor': 'pointer',
                     }),
@@ -39,7 +49,7 @@ def build_layout(refresh_ms: int) -> html.Div:
             ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-start'}),
         ], id='sticky-header', style={
             'position': 'sticky', 'top': '0', 'zIndex': '100',
-            'backgroundColor': '#fff',
+            'backgroundColor': COLOR_SURFACE_WHITE,
             'marginLeft': '-64px', 'marginRight': '-64px',
             'paddingLeft': '64px', 'paddingRight': '64px',
             'paddingTop': '24px', 'paddingBottom': '17px',
@@ -53,17 +63,17 @@ def build_layout(refresh_ms: int) -> html.Div:
         # Retry-connection + Try-demo buttons
         html.Div([
             html.Button("↻ Retry connection", id='retry-connection-btn', n_clicks=0, style={
-                'fontSize': '14px', 'fontWeight': '500', 'color': '#fff',
-                'background': '#dc2626', 'border': 'none', 'borderRadius': '8px',
+                'fontSize': '14px', 'fontWeight': '500', 'color': COLOR_SURFACE_WHITE,
+                'background': COLOR_BAD, 'border': 'none', 'borderRadius': '8px',
                 'padding': '10px 22px', 'cursor': 'pointer',
             }),
             html.Button("▶ Try demo mode", id='try-demo-btn', n_clicks=0, style={
-                'fontSize': '14px', 'fontWeight': '500', 'color': '#111',
-                'background': '#fff', 'border': '0.5px solid #d4d4d4', 'borderRadius': '8px',
+                'fontSize': '14px', 'fontWeight': '500', 'color': COLOR_TEXT_STRONG,
+                'background': COLOR_SURFACE_WHITE, 'border': '0.5px solid #d4d4d4', 'borderRadius': '8px',
                 'padding': '10px 22px', 'cursor': 'pointer', 'marginLeft': '10px',
             }),
             html.P("No TWS? Explore the dashboard with a sample portfolio.",
-                   style={'fontSize': '13px', 'color': '#888', 'margin': '10px 0 0'}),
+                   style={'fontSize': '13px', 'color': COLOR_TEXT_MUTED, 'margin': '10px 0 0'}),
         ],
             id='retry-connection-wrap',
             style={'display': 'none', 'textAlign': 'center', 'marginBottom': '24px'},
@@ -85,14 +95,14 @@ def build_layout(refresh_ms: int) -> html.Div:
                             html.Span(id='stale-price-badge'),
                         ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px'}),
                         html.Button("✨ Ask", id='coach-toggle-btn', n_clicks=0, style={
-                            'fontSize': '13px', 'color': '#555', 'background': '#f5f5f5',
+                            'fontSize': '13px', 'color': COLOR_TEXT_MID, 'background': COLOR_SURFACE,
                             'border': '0.5px solid #ddd', 'borderRadius': '8px',
                             'padding': '6px 14px', 'cursor': 'pointer',
                         }),
                     ], style={'display': 'flex', 'justifyContent': 'space-between',
                               'alignItems': 'center', 'marginBottom': '0px'}),
                     html.Span(id='positions-count', style={
-                        'fontSize': '14px', 'color': '#888',
+                        'fontSize': '14px', 'color': COLOR_TEXT_MUTED,
                         'display': 'block', 'marginBottom': '12px',
                     }),
                 ]),
@@ -111,11 +121,11 @@ def build_layout(refresh_ms: int) -> html.Div:
         # Market Intelligence header
         html.Div([
             html.P("Market Intelligence", style={
-                'fontSize': '15px', 'color': '#888', 'margin': '0 0 4px',
+                'fontSize': '15px', 'color': COLOR_TEXT_MUTED, 'margin': '0 0 4px',
                 'textTransform': 'uppercase', 'letterSpacing': '0.07em', 'fontWeight': '600',
             }),
             html.P("Sector & geography ",
-                   style={'fontSize': '15px', 'color': '#888', 'margin': '0'}),
+                   style={'fontSize': '15px', 'color': COLOR_TEXT_MUTED, 'margin': '0'}),
         ], style={
             'marginTop': '40px', 'paddingTop': '32px',
             'borderTop': '0.5px solid #f0f0f0', 'marginBottom': '24px',
@@ -180,6 +190,6 @@ def build_layout(refresh_ms: int) -> html.Div:
         'padding': '48px 64px',
         'maxWidth': '1400px',
         'margin': '0 auto',
-        'backgroundColor': '#fff',
-        'color': '#111',
+        'backgroundColor': COLOR_SURFACE_WHITE,
+        'color': COLOR_TEXT_STRONG,
     })

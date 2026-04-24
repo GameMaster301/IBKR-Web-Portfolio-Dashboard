@@ -17,7 +17,22 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 from decorators import safe_render
 from market_intel import get_price_history
 from schemas import PortfolioData
-from styles import CARD, LINK_PILL
+from styles import (
+    CARD,
+    COLOR_BAD,
+    COLOR_BORDER_HEAVY,
+    COLOR_BORDER_LIGHT,
+    COLOR_BRAND,
+    COLOR_GOOD,
+    COLOR_SURFACE,
+    COLOR_SURFACE_WHITE,
+    COLOR_TEXT,
+    COLOR_TEXT_MID,
+    COLOR_TEXT_SLATE,
+    COLOR_TEXT_STRONG,
+    COLOR_WARN,
+    LINK_PILL,
+)
 from trade_history import parse_activity_csv, save_uploaded_trades
 
 log = logging.getLogger(__name__)
@@ -35,28 +50,28 @@ def _range_bar(low, high, current):
             html.Div(style={
                 'position': 'absolute', 'left': 0, 'top': 0,
                 'width': '100%', 'height': '4px',
-                'background': '#f0f0f0', 'borderRadius': '2px',
+                'background': COLOR_BORDER_LIGHT, 'borderRadius': '2px',
             }),
             html.Div(style={
                 'position': 'absolute', 'left': 0, 'top': 0,
                 'width': f'{pct}%', 'height': '4px',
-                'background': '#378ADD', 'borderRadius': '2px',
+                'background': COLOR_BRAND, 'borderRadius': '2px',
             }),
             html.Div(style={
                 'position': 'absolute', 'left': f'{pct}%', 'top': '-4px',
                 'width': '14px', 'height': '14px', 'borderRadius': '50%',
-                'background': '#378ADD', 'border': '2px solid #fff',
+                'background': COLOR_BRAND, 'border': '2px solid #fff',
                 'boxShadow': '0 0 0 1.5px #378ADD',
                 'transform': 'translateX(-50%)',
             }),
         ], style={'position': 'relative', 'height': '14px', 'margin': '8px 0'}),
         html.Div([
-            html.Span(f"${low:,.2f}", style={'fontSize': '13px', 'color': '#555', 'fontWeight': '500'}),
+            html.Span(f"${low:,.2f}", style={'fontSize': '13px', 'color': COLOR_TEXT_MID, 'fontWeight': '500'}),
             html.Span(f"{pct:.0f}% of range",
-                      style={'fontSize': '13px', 'color': '#555', 'fontWeight': '500',
+                      style={'fontSize': '13px', 'color': COLOR_TEXT_MID, 'fontWeight': '500',
                              'position': 'absolute',
                              'left': '50%', 'transform': 'translateX(-50%)'}),
-            html.Span(f"${high:,.2f}", style={'fontSize': '13px', 'color': '#555', 'fontWeight': '500'}),
+            html.Span(f"${high:,.2f}", style={'fontSize': '13px', 'color': COLOR_TEXT_MID, 'fontWeight': '500'}),
         ], style={'display': 'flex', 'justifyContent': 'space-between', 'position': 'relative'}),
     ])
 
@@ -64,13 +79,13 @@ def _range_bar(low, high, current):
 def _stat(label, value, accent=None):
     return html.Div([
         html.P(label, style={
-            'fontSize': '13px', 'color': '#555', 'margin': '0 0 4px',
+            'fontSize': '13px', 'color': COLOR_TEXT_MID, 'margin': '0 0 4px',
             'textTransform': 'uppercase', 'letterSpacing': '0.05em',
             'fontWeight': '600',
         }),
         html.P(value, style={
             'fontSize': '17px', 'fontWeight': '600', 'margin': '0',
-            'color': accent or '#111',
+            'color': accent or COLOR_TEXT_STRONG,
         }),
     ], style={'minWidth': '90px'})
 
@@ -78,9 +93,9 @@ def _stat(label, value, accent=None):
 def _period_btn(label, active):
     return html.Button(label, id={'type': 'period-btn', 'index': label},
                        n_clicks=0, style={
-        'background': '#378ADD' if active else 'transparent',
-        'color':      '#fff'    if active else '#555',
-        'border':     '1px solid ' + ('#378ADD' if active else '#ddd'),
+        'background': COLOR_BRAND if active else 'transparent',
+        'color':      COLOR_SURFACE_WHITE    if active else COLOR_TEXT_MID,
+        'border':     '1px solid ' + (COLOR_BRAND if active else COLOR_BORDER_HEAVY),
         'borderRadius': '6px', 'padding': '4px 12px',
         'fontSize': '12px', 'cursor': 'pointer',
         'fontFamily': 'inherit', 'fontWeight': '500',
@@ -99,12 +114,12 @@ def _build_price_sparkline(ticker, period, avg_cost, trades=None):
     dates  = data_h.get('dates')  or []
     if len(prices) < 2:
         return html.P('Chart data unavailable for this period.',
-                      style={'color': '#555', 'fontSize': '14px', 'fontWeight': '500',
+                      style={'color': COLOR_TEXT_MID, 'fontSize': '14px', 'fontWeight': '500',
                              'textAlign': 'center', 'margin': '24px 0 8px'})
 
     first, last = prices[0], prices[-1]
     up = last >= first
-    line_color = '#16a34a' if up else '#dc2626'
+    line_color = COLOR_GOOD if up else COLOR_BAD
     fill_color = 'rgba(22,163,74,0.08)' if up else 'rgba(220,38,38,0.08)'
 
     fig = go.Figure(go.Scatter(
@@ -117,10 +132,10 @@ def _build_price_sparkline(ticker, period, avg_cost, trades=None):
     if avg_cost and avg_cost == avg_cost and avg_cost > 0:
         lo, hi = min(prices), max(prices)
         if lo * 0.6 <= avg_cost <= hi * 1.4:
-            fig.add_hline(y=avg_cost, line=dict(color='#555', width=1, dash='dot'),
+            fig.add_hline(y=avg_cost, line=dict(color=COLOR_TEXT_MID, width=1, dash='dot'),
                           annotation_text=f'Avg ${avg_cost:,.2f}',
                           annotation_position='top left',
-                          annotation=dict(font=dict(size=12, color='#333')))
+                          annotation=dict(font=dict(size=12, color=COLOR_TEXT)))
 
     # Trade markers (BUY ▲ green / SELL ▼ red) on trades whose date falls
     # within the plotted window.  `dates` are 'YYYY-MM-DD' strings.
@@ -147,15 +162,15 @@ def _build_price_sparkline(ticker, period, avg_cost, trades=None):
         if buys_x:
             fig.add_trace(go.Scatter(
                 x=buys_x, y=buys_y, mode='markers', name='BUY',
-                marker=dict(symbol='triangle-up', color='#16a34a',
-                            size=24, line=dict(color='#fff', width=1)),
+                marker=dict(symbol='triangle-up', color=COLOR_GOOD,
+                            size=24, line=dict(color=COLOR_SURFACE_WHITE, width=1)),
                 hovertext=buys_hover, hoverinfo='text',
             ))
         if sells_x:
             fig.add_trace(go.Scatter(
                 x=sells_x, y=sells_y, mode='markers', name='SELL',
-                marker=dict(symbol='triangle-down', color='#dc2626',
-                            size=24, line=dict(color='#fff', width=1)),
+                marker=dict(symbol='triangle-down', color=COLOR_BAD,
+                            size=24, line=dict(color=COLOR_SURFACE_WHITE, width=1)),
                 hovertext=sells_hover, hoverinfo='text',
             ))
     pct_change = (last - first) / first * 100 if first else 0
@@ -172,15 +187,15 @@ def _build_price_sparkline(ticker, period, avg_cost, trades=None):
         margin=dict(l=8, r=8, t=8, b=8), height=200,
         xaxis=dict(showgrid=False, showticklabels=False, title=None),
         yaxis=dict(showgrid=True, gridcolor='#f2f2f2', title=None,
-                   tickfont=dict(size=12, color='#555'),
+                   tickfont=dict(size=12, color=COLOR_TEXT_MID),
                    range=[y_lo - pad, y_hi + pad]),
-        plot_bgcolor='#fff', paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor=COLOR_SURFACE_WHITE, paper_bgcolor='rgba(0,0,0,0)',
         showlegend=False,
-        hoverlabel=dict(bgcolor='#fff', bordercolor='#378ADD',
-                        font=dict(size=14, color='#111', family='Inter, system-ui, sans-serif')),
+        hoverlabel=dict(bgcolor=COLOR_SURFACE_WHITE, bordercolor=COLOR_BRAND,
+                        font=dict(size=14, color=COLOR_TEXT_STRONG, family='Inter, system-ui, sans-serif')),
     )
     summary_line = html.Div([
-        html.Span(f"{period} ", style={'color': '#555', 'fontSize': '13px',
+        html.Span(f"{period} ", style={'color': COLOR_TEXT_MID, 'fontSize': '13px',
                                         'fontWeight': '500',
                                         'letterSpacing': '0.05em'}),
         html.Span(f"{'+' if pct_change >= 0 else ''}{pct_change:.2f}%",
@@ -259,10 +274,10 @@ def register(app):
 
         # Daily change header
         if daily_chg is not None and daily_chg == daily_chg:
-            chg_color = '#16a34a' if daily_chg >= 0 else '#dc2626'
+            chg_color = COLOR_GOOD if daily_chg >= 0 else COLOR_BAD
             chg_str   = f"{'▲' if daily_chg >= 0 else '▼'} ${abs(daily_chg):,.2f}  ({daily_chg_pct:+.2f}%)"
         else:
-            chg_color, chg_str = '#555', '—'
+            chg_color, chg_str = COLOR_TEXT_MID, '—'
 
         qty       = r.get('quantity') or 0
         mkt_val   = r.get('market_value')
@@ -271,18 +286,18 @@ def register(app):
 
         if avg_cost and avg_cost == avg_cost and avg_cost > 0:
             cost_diff_pct = (price - avg_cost) / avg_cost * 100
-            cost_color = '#16a34a' if cost_diff_pct >= 0 else '#dc2626'
+            cost_color = COLOR_GOOD if cost_diff_pct >= 0 else COLOR_BAD
             cost_str   = f"${avg_cost:,.2f}  ({cost_diff_pct:+.2f}%)"
         else:
-            cost_color, cost_str = '#555', '—'
+            cost_color, cost_str = COLOR_TEXT_MID, '—'
 
         qty_str    = f"{qty:,.0f}" if qty else '—'
         mkt_str    = f"${mkt_val:,.2f}" if mkt_val is not None else '—'
         if unreal is not None:
-            unreal_color = '#16a34a' if unreal >= 0 else '#dc2626'
+            unreal_color = COLOR_GOOD if unreal >= 0 else COLOR_BAD
             unreal_str   = f"${unreal:+,.2f}"
         else:
-            unreal_color, unreal_str = '#555', '—'
+            unreal_color, unreal_str = COLOR_TEXT_MID, '—'
 
         stats = html.Div([
             _stat("Quantity", qty_str),
@@ -297,7 +312,7 @@ def register(app):
                 and high_52w > low_52w):
             range_section = html.Div([
                 html.P("52-Week Range", style={
-                    'fontSize': '13px', 'color': '#555', 'margin': '0 0 0',
+                    'fontSize': '13px', 'color': COLOR_TEXT_MID, 'margin': '0 0 0',
                     'textTransform': 'uppercase', 'letterSpacing': '0.05em',
                     'fontWeight': '600',
                 }),
@@ -318,7 +333,7 @@ def register(app):
             accept='.csv',
             multiple=False,
             children=html.Span("Upload trades CSV", style={
-                'background': 'transparent', 'color': '#378ADD',
+                'background': 'transparent', 'color': COLOR_BRAND,
                 'border': '1px solid #cfe0f5', 'borderRadius': '6px',
                 'padding': '4px 10px', 'fontSize': '12px',
                 'cursor': 'pointer', 'fontWeight': '500',
@@ -326,7 +341,7 @@ def register(app):
         )
         upload_help = html.Details([
             html.Summary("How to export from IBKR ▸", style={
-                'cursor': 'pointer', 'color': '#378ADD', 'fontSize': '13px',
+                'cursor': 'pointer', 'color': COLOR_BRAND, 'fontSize': '13px',
                 'fontWeight': '600', 'marginTop': '6px',
             }),
             html.Ol([
@@ -334,7 +349,7 @@ def register(app):
                 html.Li("Go to Performance & Reports → Transaction History."),
                 html.Li("Pick a date range and click the CSV / download icon."),
                 html.Li("Drop the .csv file on the upload button above."),
-            ], style={'fontSize': '13px', 'color': '#333', 'lineHeight': '1.7',
+            ], style={'fontSize': '13px', 'color': COLOR_TEXT, 'lineHeight': '1.7',
                       'fontWeight': '500',
                       'paddingLeft': '20px', 'margin': '6px 0 0'}),
         ])
@@ -345,7 +360,7 @@ def register(app):
         chart_section = html.Div([
             html.Div([
                 html.P("Price History", style={
-                    'fontSize': '14px', 'color': '#555', 'margin': '0',
+                    'fontSize': '14px', 'color': COLOR_TEXT_MID, 'margin': '0',
                     'textTransform': 'uppercase', 'letterSpacing': '0.05em',
                     'fontWeight': '600',
                 }),
@@ -358,7 +373,7 @@ def register(app):
                       'alignItems': 'center', 'marginBottom': '6px'}),
             _build_price_sparkline(ticker, sel_period, avg_cost, ticker_trades),
             html.Div([
-                html.Span(trade_count_note, style={'fontSize': '13px', 'color': '#555', 'fontWeight': '500'}),
+                html.Span(trade_count_note, style={'fontSize': '13px', 'color': COLOR_TEXT_MID, 'fontWeight': '500'}),
                 html.Div(id={'type': 'position-upload-status', 'index': 0},
                          style={'fontSize': '12px'}),
             ], style={'display': 'flex', 'justifyContent': 'space-between',
@@ -370,9 +385,9 @@ def register(app):
             # Header row: ticker + price + daily change + quick links
             html.Div([
                 html.Div([
-                    html.Span(ticker, style={'fontWeight': '700', 'fontSize': '17px', 'color': '#111'}),
+                    html.Span(ticker, style={'fontWeight': '700', 'fontSize': '17px', 'color': COLOR_TEXT_STRONG}),
                     html.Span(f"${price:,.2f}",
-                              style={'fontSize': '17px', 'color': '#111', 'marginLeft': '12px'}),
+                              style={'fontSize': '17px', 'color': COLOR_TEXT_STRONG, 'marginLeft': '12px'}),
                     html.Span(chg_str,
                               style={'fontSize': '15px', 'color': chg_color, 'marginLeft': '12px'}),
                 ], style={'display': 'flex', 'alignItems': 'center'}),
@@ -380,8 +395,8 @@ def register(app):
                     html.Button(f"✨ Ask coach about {ticker}",
                                 id={'type': 'position-ask-coach', 'index': 0},
                                 n_clicks=0, style={
-                        'fontSize': '13px', 'color': '#374151',
-                        'background': '#f5f5f5', 'border': '1px solid #e5e7eb',
+                        'fontSize': '13px', 'color': COLOR_TEXT_SLATE,
+                        'background': COLOR_SURFACE, 'border': '1px solid #e5e7eb',
                         'borderRadius': '8px', 'padding': '5px 12px',
                         'cursor': 'pointer', 'fontWeight': '500',
                         'fontFamily': 'inherit', 'marginRight': '4px',
@@ -391,8 +406,8 @@ def register(app):
                     html.A("TradingView", href=f"https://www.tradingview.com/symbols/{ticker}/",
                            target='_blank', style=_LINK_STYLE),
                     html.Button("✕ Close", id={'type': 'position-close', 'index': 0}, n_clicks=0, style={
-                        'fontSize': '13px', 'color': '#fff',
-                        'background': '#dc2626', 'border': '1px solid #dc2626',
+                        'fontSize': '13px', 'color': COLOR_SURFACE_WHITE,
+                        'background': COLOR_BAD, 'border': '1px solid #dc2626',
                         'borderRadius': '8px', 'padding': '5px 12px',
                         'cursor': 'pointer', 'marginLeft': '4px', 'fontWeight': '500',
                         'fontFamily': 'inherit',
@@ -405,7 +420,7 @@ def register(app):
         ], style={
             **CARD,
             'marginTop': '14px',
-            'background': '#fff',
+            'background': COLOR_SURFACE_WHITE,
             'borderLeft': '3px solid #378ADD',
             'animation': 'slideInDown 0.25s ease-out',
         })
@@ -435,20 +450,20 @@ def register(app):
             return html.Span(msg, style={'color': color, 'fontWeight': '500'})
 
         if not (filename or '').lower().endswith('.csv'):
-            return no_update, [_status("Need a .csv file", '#dc2626')
+            return no_update, [_status("Need a .csv file", COLOR_BAD)
                                for _ in (contents_list or [])]
         try:
             _, b64 = contents.split(',', 1)
             decoded = base64.b64decode(b64)
         except Exception:
-            return no_update, [_status("Could not decode file", '#dc2626')
+            return no_update, [_status("Could not decode file", COLOR_BAD)
                                for _ in (contents_list or [])]
 
         parsed = parse_activity_csv(decoded)
         if not parsed:
-            return no_update, [_status("No trades found in CSV", '#b45309')
+            return no_update, [_status("No trades found in CSV", COLOR_WARN)
                                for _ in (contents_list or [])]
 
         merged = save_uploaded_trades(parsed)
         msg = f"{len(parsed)} parsed · {len(merged)} total stored"
-        return merged, [_status(msg, '#16a34a') for _ in (contents_list or [])]
+        return merged, [_status(msg, COLOR_GOOD) for _ in (contents_list or [])]

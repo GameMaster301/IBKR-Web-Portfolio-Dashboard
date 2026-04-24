@@ -25,7 +25,26 @@ from market_valuation import (
     pe_zone,
 )
 from net_util import run_parallel
-from styles import CARD
+from styles import (
+    CARD,
+    COLOR_BAD,
+    COLOR_BORDER_HEAVY,
+    COLOR_BRAND,
+    COLOR_GOOD,
+    COLOR_GOOD_SOFT,
+    COLOR_SURFACE,
+    COLOR_SURFACE_WHITE,
+    COLOR_TEXT,
+    COLOR_TEXT_DIM,
+    COLOR_TEXT_FAINT,
+    COLOR_TEXT_GHOST,
+    COLOR_TEXT_MID,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_SEMI,
+    COLOR_TEXT_STRONG,
+    COLOR_WARN_SOFT,
+    COLOR_WARN_YELLOW,
+)
 
 
 def register(app):
@@ -88,7 +107,7 @@ def _val_zone_bar(value: float, segments: list, display_max: float):
         'position': 'absolute',
         'left': f'calc({needle_pct:.2f}% - 1.5px)',
         'top': '-4px', 'width': '3px', 'height': '24px',
-        'backgroundColor': '#111', 'borderRadius': '2px', 'zIndex': '10',
+        'backgroundColor': COLOR_TEXT_STRONG, 'borderRadius': '2px', 'zIndex': '10',
     })
 
     # Zone labels below the bar — flex cells mirror the colour bands so
@@ -127,9 +146,9 @@ def _val_zone_bar(value: float, segments: list, display_max: float):
 def _val_unavailable():
     return html.Div([
         html.P("—", style={'fontSize': '28px', 'fontWeight': '600',
-                           'color': '#ddd', 'margin': '0 0 4px'}),
+                           'color': COLOR_BORDER_HEAVY, 'margin': '0 0 4px'}),
         html.Span("Data unavailable",
-                  style={'fontSize': '13px', 'color': '#bbb'}),
+                  style={'fontSize': '13px', 'color': COLOR_TEXT_GHOST}),
     ])
 
 
@@ -146,15 +165,15 @@ def _render_market_valuation_inner(data):
     def metric_card(title, subtitle, body, footer=None):
         return html.Div([
             html.P(title, style={
-                'fontSize': '13px', 'color': '#555', 'margin': '0 0 2px',
+                'fontSize': '13px', 'color': COLOR_TEXT_MID, 'margin': '0 0 2px',
                 'textTransform': 'uppercase', 'letterSpacing': '0.06em', 'fontWeight': '600',
             }),
             html.P(subtitle, style={
-                'fontSize': '13px', 'color': '#888', 'margin': '0 0 16px',
+                'fontSize': '13px', 'color': COLOR_TEXT_MUTED, 'margin': '0 0 16px',
             }),
             body,
             html.P(footer, style={
-                'fontSize': '13px', 'color': '#777', 'margin': '14px 0 0',
+                'fontSize': '13px', 'color': COLOR_TEXT_SEMI, 'margin': '14px 0 0',
                 'lineHeight': '1.5',
             }) if footer else None,
         ], style={**CARD, 'flex': '1'})
@@ -169,7 +188,7 @@ def _render_market_valuation_inner(data):
             'display': 'inline-block', 'marginBottom': '8px',
         })
 
-    def big_value(text, color='#111'):
+    def big_value(text, color=COLOR_TEXT_STRONG):
         return html.P(text, style={
             'fontSize': '36px', 'fontWeight': '700', 'margin': '0 0 6px',
             'letterSpacing': '-1px', 'color': color,
@@ -187,30 +206,30 @@ def _render_market_valuation_inner(data):
             big_value(f'{bv:.1f}%', bcolor),
             zone_badge(blabel, bcolor),
             _val_zone_bar(bv, [
-                ('Well Below Norms',   75,  '#16a34a'),
-                ('Fairly Valued',     110,  '#22c55e'),
+                ('Well Below Norms',   75,  COLOR_GOOD),
+                ('Fairly Valued',     110,  COLOR_GOOD_SOFT),
                 ('Modern',            150,  '#84cc16'),
-                ('Hot',               190,  '#f97316'),
-                ('Stretched',         280,  '#dc2626'),
+                ('Hot',               190,  COLOR_WARN_SOFT),
+                ('Stretched',         280,  COLOR_BAD),
             ], display_max=280),
             html.Div([
                 html.Span(f"Mkt Cap  ${buffett_d['market_cap_t']:.1f}T",
-                          style={'fontSize': '13px', 'color': '#666'}),
-                html.Span('  ·  ', style={'color': '#bbb', 'fontSize': '13px'}),
+                          style={'fontSize': '13px', 'color': COLOR_TEXT_DIM}),
+                html.Span('  ·  ', style={'color': COLOR_TEXT_GHOST, 'fontSize': '13px'}),
                 html.Span(f"GDP  ${buffett_d['gdp_t']:.1f}T",
-                          style={'fontSize': '13px', 'color': '#999'}),
+                          style={'fontSize': '13px', 'color': COLOR_TEXT_FAINT}),
             ], style={'marginTop': '8px'}),
             html.Div([
                 html.Span(
                     f'The market is {bv/100:.1f}× the size of the US economy'
                     f' — {above_trend_pct:.0f}% above the modern trend line.',
-                    style={'fontSize': '12px', 'color': '#555', 'fontStyle': 'italic'},
+                    style={'fontSize': '12px', 'color': COLOR_TEXT_MID, 'fontStyle': 'italic'},
                 ),
                 html.Br(),
                 html.Span(
                     f'GDP as of {buffett_d["gdp_quarter"]} ({buffett_d["gdp_source"]})'
                     ' — 1–2 quarter lag is normal.',
-                    style={'fontSize': '11px', 'color': '#bbb'},
+                    style={'fontSize': '11px', 'color': COLOR_TEXT_GHOST},
                 ),
             ], style={'marginTop': '6px'}),
         ])
@@ -234,17 +253,17 @@ def _render_market_valuation_inner(data):
                 big_value(f'{main_val:.1f}×', pcolor),
                 zone_badge(plabel, pcolor),
                 _val_zone_bar(main_val, [
-                    ('Cheap',              15, '#16a34a'),
-                    ('Fairly Valued',      20, '#22c55e'),
-                    ('Expensive',          25, '#eab308'),
-                    ('Very Expensive',     30, '#f97316'),
-                    ('Extremely Exp.',     45, '#dc2626'),
+                    ('Cheap',              15, COLOR_GOOD),
+                    ('Fairly Valued',      20, COLOR_GOOD_SOFT),
+                    ('Expensive',          25, COLOR_WARN_YELLOW),
+                    ('Very Expensive',     30, COLOR_WARN_SOFT),
+                    ('Extremely Exp.',     45, COLOR_BAD),
                 ], display_max=45),
                 html.Div([
                     html.Span(f'{main_lbl}: {main_val:.1f}×',
-                              style={'fontSize': '13px', 'color': '#666'}),
+                              style={'fontSize': '13px', 'color': COLOR_TEXT_DIM}),
                     (html.Span(f'  ·  Forward: {forward:.1f}×',
-                               style={'fontSize': '13px', 'color': '#666'})
+                               style={'fontSize': '13px', 'color': COLOR_TEXT_DIM})
                      if forward and trailing else None),
                 ], style={'marginTop': '8px'}),
             ])
@@ -268,20 +287,20 @@ def _render_market_valuation_inner(data):
             big_value(f'{cv:.1f}×', ccolor),
             zone_badge(clabel, ccolor),
             _val_zone_bar(cv, [
-                ('Undervalued',       15, '#16a34a'),
-                ('Fairly Valued',     20, '#22c55e'),
-                ('Overvalued',        25, '#eab308'),
-                ('Highly Overval.',   30, '#f97316'),
-                ('Extremely Overv.',  50, '#dc2626'),
+                ('Undervalued',       15, COLOR_GOOD),
+                ('Fairly Valued',     20, COLOR_GOOD_SOFT),
+                ('Overvalued',        25, COLOR_WARN_YELLOW),
+                ('Highly Overval.',   30, COLOR_WARN_SOFT),
+                ('Extremely Overv.',  50, COLOR_BAD),
             ], display_max=50),
             html.Div([
                 html.Span(f"Hist. mean {cape_d['hist_mean']:.1f}×",
-                          style={'fontSize': '13px', 'color': '#666'}),
-                html.Span(' · ', style={'color': '#bbb', 'fontSize': '13px'}),
+                          style={'fontSize': '13px', 'color': COLOR_TEXT_DIM}),
+                html.Span(' · ', style={'color': COLOR_TEXT_GHOST, 'fontSize': '13px'}),
                 html.Span(f"Median {cape_d['hist_median']:.1f}×",
-                          style={'fontSize': '13px', 'color': '#666'}),
+                          style={'fontSize': '13px', 'color': COLOR_TEXT_DIM}),
                 html.Span(f"  ·  as of {cape_d['last_date']}",
-                          style={'fontSize': '13px', 'color': '#888'}),
+                          style={'fontSize': '13px', 'color': COLOR_TEXT_MUTED}),
             ], style={'marginTop': '8px'}),
         ])
         cape_foot = (
@@ -320,11 +339,11 @@ def _render_market_valuation_inner(data):
         earnings_yield = round(100 / trailing_pe, 2)
         gap            = round(earnings_yield - tv, 2)
 
-        if   gap >  2:   gap_label, gap_color = 'Stocks strongly favoured',  '#16a34a'
-        elif gap >  0:   gap_label, gap_color = 'Stocks slightly favoured',   '#22c55e'
-        elif gap > -1:   gap_label, gap_color = 'Roughly equal',              '#eab308'
-        elif gap > -2:   gap_label, gap_color = 'Bonds competitive',          '#f97316'
-        else:            gap_label, gap_color = 'Bonds clearly favoured',     '#dc2626'
+        if   gap >  2:   gap_label, gap_color = 'Stocks strongly favoured',  COLOR_GOOD
+        elif gap >  0:   gap_label, gap_color = 'Stocks slightly favoured',   COLOR_GOOD_SOFT
+        elif gap > -1:   gap_label, gap_color = 'Roughly equal',              COLOR_WARN_YELLOW
+        elif gap > -2:   gap_label, gap_color = 'Bonds competitive',          COLOR_WARN_SOFT
+        else:            gap_label, gap_color = 'Bonds clearly favoured',     COLOR_BAD
 
         gap_sign = '+' if gap >= 0 else ''
 
@@ -333,13 +352,13 @@ def _render_market_valuation_inner(data):
                 # Left: formula breakdown
                 html.Div([
                     html.Span('Yield Gap', style={
-                        'fontWeight': '700', 'fontSize': '13px', 'color': '#333',
+                        'fontWeight': '700', 'fontSize': '13px', 'color': COLOR_TEXT,
                         'display': 'block', 'marginBottom': '4px',
                     }),
                     html.Span(
                         f'S&P earnings yield ({earnings_yield:.2f}%) '
                         f'− 10-yr bond yield ({tv:.2f}%)',
-                        style={'fontSize': '14px', 'color': '#555'},
+                        style={'fontSize': '14px', 'color': COLOR_TEXT_MID},
                     ),
                 ]),
                 # Right: result
@@ -364,7 +383,7 @@ def _render_market_valuation_inner(data):
                 'government bonds — a sign investors are still being rewarded for '
                 'the extra risk. When it turns negative, bonds pay more than stocks earn, '
                 'which makes expensive valuations harder to justify.',
-                style={'fontSize': '14px', 'color': '#555',
+                style={'fontSize': '14px', 'color': COLOR_TEXT_MID,
                        'marginTop': '8px', 'lineHeight': '1.5'},
             ),
         ], style={
@@ -414,28 +433,28 @@ def _render_market_valuation_inner(data):
                     layer='below', line_width=0,
                     annotation_text=f'<b>{label}</b>',
                     annotation_position=apos,
-                    annotation_font=dict(size=11, color='#777'),
+                    annotation_font=dict(size=11, color=COLOR_TEXT_SEMI),
                 )
 
         # All-time historical mean line (dotted, grey)
         fig.add_hline(y=mean_val, line_dash='dot',
-                      line_color='#bbb', line_width=1,
+                      line_color=COLOR_TEXT_GHOST, line_width=1,
                       annotation_text=f'100-yr mean {mean_val:.0f}×',
                       annotation_position='top left',
-                      annotation_font=dict(size=10, color='#bbb'))
+                      annotation_font=dict(size=10, color=COLOR_TEXT_GHOST))
 
         # Modern mean line (dashed, blue-grey) — last 20 years
         fig.add_hline(y=modern_mean, line_dash='dash',
-                      line_color='#378ADD', line_width=1,
+                      line_color=COLOR_BRAND, line_width=1,
                       annotation_text=f'20-yr mean {modern_mean:.0f}×',
                       annotation_position='bottom left',
-                      annotation_font=dict(size=10, color='#378ADD'))
+                      annotation_font=dict(size=10, color=COLOR_BRAND))
 
         # CAPE line
         fig.add_trace(go.Scatter(
             x=dates_plot, y=vals_plot,
             mode='lines',
-            line=dict(color='#378ADD', width=2),
+            line=dict(color=COLOR_BRAND, width=2),
             name='Shiller CAPE',
             hovertemplate='%{x}  ·  CAPE <b>%{y:.1f}×</b><extra></extra>',
         ))
@@ -444,11 +463,11 @@ def _render_market_valuation_inner(data):
         fig.add_trace(go.Scatter(
             x=[dates_plot[-1]], y=[vals_plot[-1]],
             mode='markers+text',
-            marker=dict(color=ccolor if cape_d else '#378ADD', size=10,
-                        line=dict(color='#fff', width=2)),
+            marker=dict(color=ccolor if cape_d else COLOR_BRAND, size=10,
+                        line=dict(color=COLOR_SURFACE_WHITE, width=2)),
             text=[f'  {vals_plot[-1]:.1f}×'],
             textposition='middle right',
-            textfont=dict(size=11, color=ccolor if cape_d else '#378ADD'),
+            textfont=dict(size=11, color=ccolor if cape_d else COLOR_BRAND),
             showlegend=False,
             hoverinfo='skip',
         ))
@@ -460,10 +479,10 @@ def _render_market_valuation_inner(data):
             showlegend=False,
             hovermode='x unified',
             xaxis=dict(showgrid=False, zeroline=False,
-                       tickfont=dict(size=10, color='#bbb'),
+                       tickfont=dict(size=10, color=COLOR_TEXT_GHOST),
                        tickangle=-30),
-            yaxis=dict(showgrid=True, gridcolor='#f5f5f5', zeroline=False,
-                       tickfont=dict(size=10, color='#bbb'),
+            yaxis=dict(showgrid=True, gridcolor=COLOR_SURFACE, zeroline=False,
+                       tickfont=dict(size=10, color=COLOR_TEXT_GHOST),
                        ticksuffix='×', title=None),
             height=260,
         )
@@ -474,15 +493,15 @@ def _render_market_valuation_inner(data):
                 'textTransform': 'uppercase', 'letterSpacing': '0.05em',
             }),
             html.P([
-                html.Span("▮ Undervalued (<15)",        style={'color': '#16a34a'}),
-                html.Span("  ·  ", style={'color': '#bbb'}),
-                html.Span("▮ Fairly Valued (15–20)",  style={'color': '#22c55e'}),
-                html.Span("  ·  ", style={'color': '#bbb'}),
-                html.Span("▮ Overvalued (20–25)",      style={'color': '#eab308'}),
-                html.Span("  ·  ", style={'color': '#bbb'}),
-                html.Span("▮ Highly Overvalued (25–30)", style={'color': '#f97316'}),
-                html.Span("  ·  ", style={'color': '#bbb'}),
-                html.Span("▮ Extremely Overvalued (30+)",  style={'color': '#dc2626'}),
+                html.Span("▮ Undervalued (<15)",        style={'color': COLOR_GOOD}),
+                html.Span("  ·  ", style={'color': COLOR_TEXT_GHOST}),
+                html.Span("▮ Fairly Valued (15–20)",  style={'color': COLOR_GOOD_SOFT}),
+                html.Span("  ·  ", style={'color': COLOR_TEXT_GHOST}),
+                html.Span("▮ Overvalued (20–25)",      style={'color': COLOR_WARN_YELLOW}),
+                html.Span("  ·  ", style={'color': COLOR_TEXT_GHOST}),
+                html.Span("▮ Highly Overvalued (25–30)", style={'color': COLOR_WARN_SOFT}),
+                html.Span("  ·  ", style={'color': COLOR_TEXT_GHOST}),
+                html.Span("▮ Extremely Overvalued (30+)",  style={'color': COLOR_BAD}),
             ], style={'fontSize': '14px', 'margin': '0 0 6px'}),
             dcc.Graph(figure=fig, config={'displayModeBar': False}),
         ])

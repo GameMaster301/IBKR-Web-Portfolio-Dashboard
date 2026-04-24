@@ -23,14 +23,30 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 import ai_provider
 from coach import SCENARIOS, render_scenario
-from styles import CARD
+from styles import (
+    CARD,
+    COLOR_BORDER_MID,
+    COLOR_GOOD,
+    COLOR_GOOD_BG,
+    COLOR_SURFACE,
+    COLOR_SURFACE_SOFT,
+    COLOR_SURFACE_WHITE,
+    COLOR_TEXT_DIM,
+    COLOR_TEXT_FAINT,
+    COLOR_TEXT_MID,
+    COLOR_TEXT_MUTED,
+    COLOR_TEXT_SLATE,
+    COLOR_TEXT_STRONG,
+    COLOR_WARN,
+    COLOR_WARN_BG,
+)
 
 log = logging.getLogger(__name__)
 
 
 def register(app):
     _COACH_BTN = {
-        'fontSize': '13px', 'color': '#555', 'background': '#f5f5f5',
+        'fontSize': '13px', 'color': COLOR_TEXT_MID, 'background': COLOR_SURFACE,
         'border': '0.5px solid #ddd', 'borderRadius': '8px',
         'padding': '6px 14px', 'cursor': 'pointer',
         'transition': 'background 120ms ease, color 120ms ease',
@@ -38,7 +54,7 @@ def register(app):
 
     _COACH_BTN_PRIMARY = {
         **_COACH_BTN,
-        'background': '#111', 'color': '#fff', 'border': '0.5px solid #111',
+        'background': COLOR_TEXT_STRONG, 'color': COLOR_SURFACE_WHITE, 'border': '0.5px solid #111',
     }
 
     _COACH_INPUT = {
@@ -47,7 +63,7 @@ def register(app):
     }
 
     _COACH_SECTION_LABEL = {
-        'fontSize': '12px', 'color': '#888', 'margin': '0 0 10px',
+        'fontSize': '12px', 'color': COLOR_TEXT_MUTED, 'margin': '0 0 10px',
         'textTransform': 'uppercase', 'letterSpacing': '0.08em', 'fontWeight': '600',
     }
 
@@ -110,27 +126,27 @@ def register(app):
 
     _USER_BUBBLE = {
         'maxWidth': '80%', 'padding': '10px 14px', 'borderRadius': '16px 16px 4px 16px',
-        'background': '#111', 'color': '#fff', 'fontSize': '14px', 'lineHeight': '1.5',
+        'background': COLOR_TEXT_STRONG, 'color': COLOR_SURFACE_WHITE, 'fontSize': '14px', 'lineHeight': '1.5',
         'whiteSpace': 'pre-wrap', 'wordBreak': 'break-word',
     }
     _ASSIST_BUBBLE = {
         'maxWidth': '88%', 'padding': '12px 16px', 'borderRadius': '16px 16px 16px 4px',
-        'background': '#f4f4f5', 'color': '#111', 'fontSize': '14px', 'lineHeight': '1.55',
+        'background': '#f4f4f5', 'color': COLOR_TEXT_STRONG, 'fontSize': '14px', 'lineHeight': '1.55',
         'wordBreak': 'break-word',
     }
-    _ASSIST_ERR = {**_ASSIST_BUBBLE, 'background': '#fffbeb',
-                   'border': '0.5px solid #fde68a', 'color': '#b45309'}
+    _ASSIST_ERR = {**_ASSIST_BUBBLE, 'background': COLOR_WARN_BG,
+                   'border': '0.5px solid #fde68a', 'color': COLOR_WARN}
 
     _CHIP_STYLE = {
         'fontSize': '12px', 'padding': '6px 12px', 'cursor': 'pointer',
-        'background': '#fff', 'border': '0.5px solid #e5e7eb', 'borderRadius': '999px',
-        'color': '#374151', 'transition': 'all 120ms ease', 'textAlign': 'left',
+        'background': COLOR_SURFACE_WHITE, 'border': '0.5px solid #e5e7eb', 'borderRadius': '999px',
+        'color': COLOR_TEXT_SLATE, 'transition': 'all 120ms ease', 'textAlign': 'left',
         'lineHeight': '1.3',
     }
 
     _ICON_BTN = {
         'background': 'transparent', 'border': 'none', 'cursor': 'pointer',
-        'color': '#888', 'fontSize': '12px', 'padding': '2px 6px',
+        'color': COLOR_TEXT_MUTED, 'fontSize': '12px', 'padding': '2px 6px',
         'borderRadius': '6px', 'marginLeft': '6px',
     }
 
@@ -183,7 +199,7 @@ def register(app):
         if is_last and followups:
             chips = html.Div([
                 html.Div("Suggested follow-ups", style={
-                    'fontSize': '11px', 'color': '#888', 'margin': '10px 4px 6px',
+                    'fontSize': '11px', 'color': COLOR_TEXT_MUTED, 'margin': '10px 4px 6px',
                     'letterSpacing': '0.04em', 'textTransform': 'uppercase',
                     'fontWeight': '600',
                 }),
@@ -210,10 +226,10 @@ def register(app):
                 html.Span(".", style={'animation': 'coachPulse 1.2s infinite', 'animationDelay': '0s'}),
                 html.Span(".", style={'animation': 'coachPulse 1.2s infinite', 'animationDelay': '0.2s', 'marginLeft': '2px'}),
                 html.Span(".", style={'animation': 'coachPulse 1.2s infinite', 'animationDelay': '0.4s', 'marginLeft': '2px'}),
-                html.Span("Thinking…", style={'marginLeft': '8px', 'color': '#888',
+                html.Span("Thinking…", style={'marginLeft': '8px', 'color': COLOR_TEXT_MUTED,
                                                'fontSize': '13px'}),
             ], style={**_ASSIST_BUBBLE, 'display': 'flex', 'alignItems': 'center',
-                      'color': '#666'}),
+                      'color': COLOR_TEXT_DIM}),
             style={'display': 'flex', 'justifyContent': 'flex-start', 'marginBottom': '10px'},
         )
 
@@ -485,9 +501,9 @@ def register(app):
                     n_clicks=0,
                     title=tab_label,
                     style={
-                        'background': '#111' if is_active else '#fff',
-                        'color':      '#fff' if is_active else '#374151',
-                        'border':     '0.5px solid ' + ('#111' if is_active else '#e5e7eb'),
+                        'background': COLOR_TEXT_STRONG if is_active else COLOR_SURFACE_WHITE,
+                        'color':      COLOR_SURFACE_WHITE if is_active else COLOR_TEXT_SLATE,
+                        'border':     '0.5px solid ' + (COLOR_TEXT_STRONG if is_active else COLOR_BORDER_MID),
                         'borderRadius': '999px 0 0 999px',
                         'padding': '4px 10px', 'fontSize': '12px',
                         'cursor': 'pointer', 'maxWidth': '180px',
@@ -499,9 +515,9 @@ def register(app):
                     id={'type': 'coach-thread-del', 'index': t['id']},
                     n_clicks=0, title='Delete chat',
                     style={
-                        'background': '#111' if is_active else '#fff',
-                        'color':      '#fff' if is_active else '#9ca3af',
-                        'border':     '0.5px solid ' + ('#111' if is_active else '#e5e7eb'),
+                        'background': COLOR_TEXT_STRONG if is_active else COLOR_SURFACE_WHITE,
+                        'color':      COLOR_SURFACE_WHITE if is_active else '#9ca3af',
+                        'border':     '0.5px solid ' + (COLOR_TEXT_STRONG if is_active else COLOR_BORDER_MID),
                         'borderLeft': 'none',
                         'borderRadius': '0 999px 999px 0',
                         'padding': '4px 8px', 'fontSize': '12px',
@@ -848,8 +864,8 @@ def register(app):
             'transition':     'background 120ms ease, color 120ms ease',
         }
         if active:
-            return {**base, 'color': '#fff', 'background': '#111'}
-        return {**base, 'color': '#666', 'background': 'transparent'}
+            return {**base, 'color': COLOR_SURFACE_WHITE, 'background': COLOR_TEXT_STRONG}
+        return {**base, 'color': COLOR_TEXT_DIM, 'background': 'transparent'}
 
 
     @app.callback(
@@ -880,20 +896,20 @@ def register(app):
             html.Button("AI", id='coach-mode-ai-btn',
                         style=_mode_btn_style(mode == 'ai')),
         ], style={'display': 'flex', 'gap': '2px', 'padding': '3px',
-                  'background': '#f5f5f5', 'borderRadius': '7px'})
+                  'background': COLOR_SURFACE, 'borderRadius': '7px'})
 
         header = html.Div([
             html.Div([
                 html.Span("✨", style={'fontSize': '18px', 'marginRight': '8px'}),
                 html.Span("Portfolio coach",
-                          style={'fontSize': '16px', 'fontWeight': '600', 'color': '#111'}),
+                          style={'fontSize': '16px', 'fontWeight': '600', 'color': COLOR_TEXT_STRONG}),
             ], style={'display': 'flex', 'alignItems': 'center'}),
             html.Div([
                 toggle,
                 html.Button("✕", id='coach-close-btn', title="Close", style={
-                    'width': '32px', 'height': '28px', 'background': '#fff',
+                    'width': '32px', 'height': '28px', 'background': COLOR_SURFACE_WHITE,
                     'border': '0.5px solid #ddd', 'borderRadius': '6px',
-                    'cursor': 'pointer', 'fontSize': '14px', 'color': '#666',
+                    'cursor': 'pointer', 'fontSize': '14px', 'color': COLOR_TEXT_DIM,
                     'padding': '0', 'lineHeight': '1', 'marginLeft': '10px',
                 }),
             ], style={'display': 'flex', 'alignItems': 'center'}),
@@ -926,9 +942,9 @@ def register(app):
                     'transition': 'all 120ms ease', 'fontWeight': '500',
                 }
                 if selected:
-                    return {**base, 'background': '#111', 'color': '#fff',
+                    return {**base, 'background': COLOR_TEXT_STRONG, 'color': COLOR_SURFACE_WHITE,
                             'border': '0.5px solid #111'}
-                return {**base, 'background': '#fff', 'color': '#374151',
+                return {**base, 'background': COLOR_SURFACE_WHITE, 'color': COLOR_TEXT_SLATE,
                         'border': '0.5px solid #e5e7eb'}
 
             children.append(html.Div([
@@ -975,7 +991,7 @@ def register(app):
                                 style={**_COACH_BTN_PRIMARY, 'marginLeft': '8px'}),
                 ], style={'display': 'flex', 'alignItems': 'stretch'}),
                 html.P("Stored in your browser only — never uploaded.",
-                       style={'color': '#999', 'fontSize': '12px',
+                       style={'color': COLOR_TEXT_FAINT, 'fontSize': '12px',
                               'margin': '6px 0 0', 'lineHeight': '1.5'}),
             ]))
             children.append(html.Div([
@@ -1002,7 +1018,7 @@ def register(app):
                     'scrollbarWidth': 'thin',
                 }),
                 html.Button("＋ New", id='coach-new-thread-btn', n_clicks=0, style={
-                    'background': '#fff', 'color': '#111',
+                    'background': COLOR_SURFACE_WHITE, 'color': COLOR_TEXT_STRONG,
                     'border': '0.5px solid #e5e7eb', 'borderRadius': '999px',
                     'padding': '4px 12px', 'fontSize': '12px',
                     'cursor': 'pointer', 'marginLeft': '8px', 'fontWeight': '500',
@@ -1019,10 +1035,10 @@ def register(app):
             has_history = bool(chat_history)
             status_bar = html.Div([
                 html.Span([
-                    html.Span("●", style={'color': '#16a34a', 'marginRight': '6px'}),
+                    html.Span("●", style={'color': COLOR_GOOD, 'marginRight': '6px'}),
                     f"{ai_provider.provider_label(provider)} connected",
-                ], style={'fontSize': '12px', 'color': '#16a34a',
-                          'background': '#f0fdf4', 'padding': '3px 10px',
+                ], style={'fontSize': '12px', 'color': COLOR_GOOD,
+                          'background': COLOR_GOOD_BG, 'padding': '3px 10px',
                           'borderRadius': '999px',
                           'border': '0.5px solid #bbf7d0'}),
                 html.Div([
@@ -1045,7 +1061,7 @@ def register(app):
                 className='coach-chat-output',
                 style={'maxHeight': '420px',
                        'overflowY': 'auto', 'padding': '12px',
-                       'background': '#fafafa',
+                       'background': COLOR_SURFACE_SOFT,
                        'border': '0.5px solid #ebebeb', 'borderRadius': '10px',
                        'marginBottom': '10px'},
             )
@@ -1059,7 +1075,7 @@ def register(app):
                     style={'flex': '1', 'padding': '10px 14px', 'fontSize': '14px',
                            'lineHeight': '1.5', 'boxSizing': 'border-box',
                            'border': '0.5px solid #ddd', 'borderRadius': '10px',
-                           'background': '#fff', 'color': '#111',
+                           'background': COLOR_SURFACE_WHITE, 'color': COLOR_TEXT_STRONG,
                            'transition': 'border-color 120ms ease'},
                 ),
                 html.Button("Send ↑", id='coach-send-btn', n_clicks=0,
