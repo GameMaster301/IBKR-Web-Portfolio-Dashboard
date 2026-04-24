@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash import Input, Output, dash_table, html
 
-from dashboard_core.helpers import make_table, section_label, to_eur
+from dashboard_core.helpers import EURUSD_FALLBACK, make_table, section_label, to_eur
 from decorators import NotReadyError, safe_render
 from schemas import PortfolioData
 from styles import CARD
@@ -31,7 +31,7 @@ def register(app):
 
         s = data['summary']
         a = data.get('account', {})
-        rate = a.get('eurusd_rate', 1.08)
+        rate = a.get('eurusd_rate', EURUSD_FALLBACK)
 
         total_val  = s['total_value']
         unreal_pnl = s['total_unrealized_pnl']
@@ -85,7 +85,7 @@ def register(app):
         if not data or 'positions' not in data:
             return html.P("—", style={'color': '#ccc', 'fontSize': '15px'}), '', None
         df = pd.DataFrame(data['positions'])
-        rate = data.get('account', {}).get('eurusd_rate', 1.08)
+        rate = data.get('account', {}).get('eurusd_rate', EURUSD_FALLBACK)
 
         count = f"{len(df)} positions"
         any_stale = df.get('price_stale', pd.Series(False)).any()
@@ -213,7 +213,7 @@ def register(app):
 
         positions = data['positions']
         div_data  = data.get('div_data', {})
-        rate      = data.get('account', {}).get('eurusd_rate', 1.08)
+        rate      = data.get('account', {}).get('eurusd_rate', EURUSD_FALLBACK)
 
         # Build per-position dividend enrichment
         div_positions = []

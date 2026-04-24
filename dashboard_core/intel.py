@@ -21,7 +21,7 @@ from datetime import date, datetime
 import plotly.graph_objects as go
 from dash import Input, Output, State, ctx, dcc, html, no_update
 
-from dashboard_core.helpers import make_table, section_label, to_eur
+from dashboard_core.helpers import EURUSD_FALLBACK, make_table, section_label, to_eur
 from decorators import NotReadyError, safe_render
 from market_intel import get_earnings_data, get_sector_geo
 from net_util import run_parallel
@@ -183,7 +183,7 @@ def _render_sector_geo_inner(intel: MarketIntelData | None, port_data: Portfolio
     sec_colors = [colors[i % len(colors)] for i in range(len(sec_labels))]
     color_by_sec = dict(zip(sec_labels, sec_colors, strict=True))
 
-    rate = (port_data.get('account') or {}).get('eurusd_rate') or 1.08
+    rate = (port_data.get('account') or {}).get('eurusd_rate') or EURUSD_FALLBACK
     total_val_raw = (port_data.get('summary') or {}).get('total_value') or total
     total_val_eur = to_eur(total_val_raw, rate)
     if total_val_eur >= 1_000_000:

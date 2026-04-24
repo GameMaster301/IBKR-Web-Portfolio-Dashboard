@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from config import cfg
+
 # (ticker, conId, qty, avg_cost, current_price, market_value_eur, unrealized_pnl_eur)
 _POSITIONS = [
     ('AAPL',    265598,    60,  175.00, 195.50, 10_861.00,  1_139.00),
@@ -118,7 +120,7 @@ def build_demo_payload() -> dict:
         'equity_with_loan':     net_liq,
         'sma':                  round(net_liq * 0.4, 2),
         'day_trades_remaining': 3.0,
-        'eurusd_rate':          1.08,
+        'eurusd_rate':          cfg['display']['eurusd_fallback'],
         'daily_pnl':            287.40,
     }
 

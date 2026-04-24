@@ -32,6 +32,8 @@ from datetime import datetime, timedelta
 
 from ib_async import IB, ExecutionFilter, Forex
 
+from config import cfg
+
 log = logging.getLogger(__name__)
 
 _MAX_BACKOFF   = 120   # seconds
@@ -330,7 +332,7 @@ class _IBKRConnection:
             'equity_with_loan':     get_av('EquityWithLoanValue', 'EUR'),
             'sma':                  get_av('SMA',                 'EUR'),
             'day_trades_remaining': get_av('DayTradesRemaining',  ''),
-            'eurusd_rate':          1.08,
+            'eurusd_rate':          cfg['display']['eurusd_fallback'],
         }
 
         if not contracts:
@@ -395,7 +397,8 @@ class _IBKRConnection:
                     log.debug("EUR/USD rate: %.6f", rate)
                     return round(rate, 6)
             except Exception as e:
-                log.warning("EUR/USD rate fetch failed, using fallback 1.08: %s", e)
+                log.warning("EUR/USD rate fetch failed, using fallback %.4f: %s",
+                            cfg['display']['eurusd_fallback'], e)
             return None
 
         # Chain E: recent trade executions (IBKR server caps history at ~7 days)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dash import html
 
+from config import cfg
 from styles import (
     COLOR_BORDER,
     LINK_PILL,
@@ -18,6 +19,11 @@ from styles import (
     TEXT_HEADING,
     TEXT_SECTION_LABEL,
 )
+
+# Single reference for the EUR/USD fallback rate (used when IBKR hasn't
+# delivered a live rate yet). Reads from cfg so EURUSD_FALLBACK env var
+# or config.yaml overrides flow through without touching any callback.
+EURUSD_FALLBACK: float = cfg['display']['eurusd_fallback']
 
 
 def to_eur(usd, rate):

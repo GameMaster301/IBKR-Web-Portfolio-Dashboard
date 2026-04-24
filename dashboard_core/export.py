@@ -12,6 +12,7 @@ from datetime import datetime
 import pandas as pd
 from dash import Input, Output, State, dcc, no_update
 
+from dashboard_core.helpers import EURUSD_FALLBACK
 from ibkr_client import is_demo_mode
 
 
@@ -34,7 +35,7 @@ def register(app):
         df = pd.DataFrame(data['positions'])
         s = data.get('summary', {})
         a = data.get('account', {})
-        rate = a.get('eurusd_rate', 1.08)
+        rate = a.get('eurusd_rate', EURUSD_FALLBACK)
 
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4,
