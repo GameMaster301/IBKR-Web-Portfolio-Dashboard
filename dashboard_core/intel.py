@@ -22,8 +22,10 @@ import plotly.graph_objects as go
 from dash import Input, Output, State, ctx, dcc, html, no_update
 
 from dashboard_core.helpers import make_table, section_label, to_eur
+from decorators import NotReadyError, safe_render
 from market_intel import get_earnings_data, get_sector_geo
 from net_util import run_parallel
+from schemas import MarketIntelData, PortfolioData
 from styles import CARD
 
 log = logging.getLogger(__name__)
@@ -32,24 +34,6 @@ log = logging.getLogger(__name__)
 # failed fetch is retried on the next 60-second refresh.
 _last_intel_tickers: tuple | None = None
 
-
-def _intel_loading(label: str):
-    return html.Div(
-        html.P(f"Loading {label}…",
-               style={'fontSize': '15px', 'color': '#bbb',
-                      'textAlign': 'center', 'padding': '32px 0', 'margin': '0'}),
-        style=CARD,
-    )
-
-
-def _intel_error(label: str, err: Exception):
-    log.error("Market intel render error (%s): %s", label, err, exc_info=False)
-    return html.Div(
-        html.P(f"{label} temporarily unavailable — will retry on next refresh.",
-               style={'fontSize': '15px', 'color': '#b45309',
-                      'textAlign': 'center', 'padding': '24px 0', 'margin': '0'}),
-        style={**CARD, 'background': '#fffbeb', 'borderLeft': '3px solid #fde68a'},
-    )
 
 
 def register(app):
@@ -129,11 +113,9 @@ def register(app):
         Input('market-intel-data', 'data'),
         State('portfolio-data', 'data'),
     )
-    def render_sector_geo(intel, port_data):
-        try:
-            return _render_sector_geo_inner(intel, port_data)
-        except Exception as e:
-            return _intel_error("Sector & Geography", e)
+    @safe_render('Sector & Geography')
+    def render_sector_geo(intel: MarketIntelData | None, port_data: PortfolioData | None):
+        return _render_sector_geo_inner(intel, port_data)
 
     # ── 3. Earnings calendar ─────────────────────────────────────────────────
     @app.callback(
@@ -141,16 +123,14 @@ def register(app):
         Input('market-intel-data', 'data'),
         State('portfolio-data', 'data'),
     )
-    def render_earnings(intel, port_data):
-        try:
-            return _render_earnings_inner(intel, port_data)
-        except Exception as e:
-            return _intel_error("Earnings", e)
+    @safe_render('Earnings')
+    def render_earnings(intel: MarketIntelData | None, port_data: PortfolioData | None):
+        return _render_earnings_inner(intel, port_data)
 
 
-def _render_sector_geo_inner(intel, port_data):
+def _render_sector_geo_inner(intel: MarketIntelData | None, port_data: PortfolioData | None):
     if not intel:
-        return _intel_loading('sector & geography data')
+        raise NotReadyError('Loading sector & geography data…')
     if not port_data or 'positions' not in port_data:
         return None
 
@@ -350,9 +330,9 @@ def _render_sector_geo_inner(intel, port_data):
     ], style=CARD)
 
 
-def _render_earnings_inner(intel, port_data):
+def _render_earnings_inner(intel: MarketIntelData | None, port_data: PortfolioData | None):
     if not intel:
-        return _intel_loading('earnings data')
+        raise NotReadyError('Loading earnings data…')
 
     earnings = intel.get('earnings', {})
     positions = (port_data or {}).get('positions', [])

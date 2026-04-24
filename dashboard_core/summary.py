@@ -13,6 +13,8 @@ import plotly.graph_objects as go
 from dash import Input, Output, dash_table, html
 
 from dashboard_core.helpers import make_table, section_label, to_eur
+from decorators import NotReadyError, safe_render
+from schemas import PortfolioData
 from styles import CARD
 
 
@@ -22,9 +24,10 @@ def register(app):
         Output('summary-cards', 'children'),
         Input('portfolio-data', 'data'),
     )
-    def update_summary(data):
+    @safe_render('Summary')
+    def update_summary(data: PortfolioData | None):
         if not data or 'summary' not in data:
-            return []
+            raise NotReadyError('Loading portfolio…')
 
         s = data['summary']
         a = data.get('account', {})
@@ -203,9 +206,10 @@ def register(app):
         Input('portfolio-data', 'data'),
         Input('refresh-interval', 'n_intervals'),
     )
-    def update_dividends(data, *_):
+    @safe_render('Dividends')
+    def update_dividends(data: PortfolioData | None, *_):
         if not data or 'positions' not in data:
-            return None
+            raise NotReadyError('Loading dividend data…')
 
         positions = data['positions']
         div_data  = data.get('div_data', {})

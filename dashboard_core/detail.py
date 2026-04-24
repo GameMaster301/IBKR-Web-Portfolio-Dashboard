@@ -14,7 +14,9 @@ import pandas as pd
 import plotly.graph_objects as go
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
+from decorators import safe_render
 from market_intel import get_price_history
+from schemas import PortfolioData
 from styles import CARD, LINK_PILL
 from trade_history import parse_activity_csv, save_uploaded_trades
 
@@ -239,7 +241,8 @@ def register(app):
         Input('uploaded-trades', 'data'),
         State('portfolio-data', 'data'),
     )
-    def show_position_detail(ticker, period, uploaded, data):
+    @safe_render('Position Detail')
+    def show_position_detail(ticker: str | None, period: str, uploaded, data: PortfolioData | None):
         if not ticker or not data or 'positions' not in data:
             return None
         df = pd.DataFrame(data['positions'])

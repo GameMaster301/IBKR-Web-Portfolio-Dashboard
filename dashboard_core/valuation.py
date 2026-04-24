@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 from dash import Input, Output, dcc, html
 
 from dashboard_core.helpers import section_label
-from dashboard_core.intel import _intel_error, _intel_loading
+from decorators import NotReadyError, safe_render
 from market_valuation import (
     buffett_zone,
     cape_zone,
@@ -52,11 +52,9 @@ def register(app):
         Output('market-valuation-section', 'children'),
         Input('valuation-data', 'data'),
     )
+    @safe_render('Market Valuation')
     def render_market_valuation(data):
-        try:
-            return _render_market_valuation_inner(data)
-        except Exception as e:
-            return _intel_error("Market Valuation", e)
+        return _render_market_valuation_inner(data)
 
 
 def _val_zone_bar(value: float, segments: list, display_max: float):
@@ -137,7 +135,7 @@ def _val_unavailable():
 
 def _render_market_valuation_inner(data):
     if data is None:
-        return _intel_loading('valuation data')
+        raise NotReadyError('Loading valuation data…')
 
     buffett_d  = data.get('buffett')
     pe_d       = data.get('sp500_pe')
