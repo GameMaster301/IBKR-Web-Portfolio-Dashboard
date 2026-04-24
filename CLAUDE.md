@@ -125,7 +125,7 @@ All four are single-word assignments (bool / float / tuple / None), safe under t
 
 ### Styling
 
-All CSS customisation lives in `assets/custom.css`. Dash auto-serves everything in `assets/`. Inline styles in `dashboard.py` use the `CARD` dict (defined near the top of the file) as a shared base for card styling — extend it rather than copy-pasting raw style dicts.
+All CSS customisation lives in `assets/custom.css`. Dash auto-serves everything in `assets/`. All colour literals and shared style dicts live in `styles.py` — import named constants from there instead of writing raw hex values. `CARD` is the shared base for bordered panel containers; extend it (`{**CARD, 'background': COLOR_SURFACE_SOFT}`) rather than copy-pasting raw style dicts.
 
 ### Caching layers
 
@@ -144,9 +144,9 @@ restarts. Falls back to an in-memory TTL dict if `diskcache` fails to import.
 
 ### Adding a new dashboard section
 
-1. Add a `html.Div(id='my-section')` to the layout in `dashboard.py`.
-2. Write a `@app.callback(Output('my-section', 'children'), Input('portfolio-data', 'data'))` callback.
-3. Use `section_label('Title')` for the section header and `make_table(headers, rows)` for any tabular data — these helpers are defined near the top of `dashboard.py` and used by every existing section.
+1. Add a `html.Div(id='my-section')` to the layout in `dashboard_core/layout.py`.
+2. Create a new module (or add to an existing one) with a `register(app)` function containing a `@app.callback(Output('my-section', 'children'), Input('portfolio-data', 'data'))` callback. Call `register(app)` from `dashboard.py`.
+3. Use `section_label('Title')` from `dashboard_core/helpers.py` for the section header and `make_table(headers, rows)` for tabular data. Import colours and card styles from `styles.py` — don't add raw hex literals.
 4. If it needs yfinance data, add it to `populate_market_intel` and read from `market-intel-data` store instead of fetching directly.
 5. If it needs new IBKR data, add the fetch to `_do_fetch()` in `ibkr_client.py` and include it in the returned dict.
 

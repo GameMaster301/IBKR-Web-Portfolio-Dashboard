@@ -261,7 +261,18 @@ docker exec -it ibkrdash python -c "import yfinance as yf; print(yf.Ticker('AAPL
 ├── main.py               Entry point — starts IBKR thread and Dash server
 ├── config.py             Config loader (YAML + env var overrides)
 ├── ibkr_client.py        Persistent IB Gateway / TWS connection with exponential back-off & heartbeat
-├── dashboard.py          Dash layout, all callbacks, graceful error handling
+├── demo_data.py          Deterministic sample portfolio used in demo mode
+├── dashboard.py          ~30-line orchestrator: creates app, wires layout + all module callbacks
+├── dashboard_core/
+│   ├── layout.py         Full app.layout HTML/dcc tree — build_layout(refresh_ms)
+│   ├── data_callbacks.py fetch_data, update_status, retry/demo toggles, keyboard shortcuts
+│   ├── summary.py        Summary cards, holdings table, allocation donut, dividends panel
+│   ├── detail.py         Position detail slide-out: stats, sparkline, trade CSV upload
+│   ├── intel.py          Toast, populate_market_intel store, sector/geo charts, earnings calendar
+│   ├── valuation.py      populate_valuation_data store, Buffett/CAPE/P-E/Treasury render
+│   ├── coach_ui.py       AI Coach panel: threads, chat, preset scenarios, LLM integration
+│   ├── export.py         PDF export callback
+│   └── helpers.py        section_label, make_table, badge, status_banner, to_eur, EURUSD_FALLBACK
 ├── data_processor.py     Position calculations and enrichment
 ├── analytics.py          Dividend data helpers (yfinance)
 ├── market_intel.py       Sector/geo exposure and earnings calendar (yfinance)
@@ -269,6 +280,10 @@ docker exec -it ibkrdash python -c "import yfinance as yf; print(yf.Ticker('AAPL
 ├── trade_history.py      CSV upload path for historical trades
 ├── coach.py              Rules-based Portfolio Coach scenarios (no network)
 ├── ai_provider.py        Optional LLM layer — Anthropic / xAI / OpenAI (BYO key)
+├── schemas.py            TypedDict definitions for all dcc.Store payloads
+├── decorators.py         @safe_render decorator and NotReadyError for callback error handling
+├── styles.py             Centralised colour palette and shared style dicts (CARD, badges, tables)
+├── cache_util.py         cached_fetch() — diskcache-backed TTL cache with in-memory fallback
 ├── assets/
 │   └── custom.css        Dashboard CSS overrides
 ├── config.yaml           Default configuration
@@ -310,7 +325,7 @@ docker exec -it ibkrdash python -c "import yfinance as yf; print(yf.Ticker('AAPL
 
 - The dashboard connects in **read-only mode** — it cannot place, modify, or cancel orders.
 - IB Gateway ports: `4002` (paper) / `4001` (live). TWS ports: `7497` (paper) / `7496` (live).
-- yfinance data (market intelligence, valuation indicators) is cached in memory for 4 hours; IBKR market data refreshes every 60 seconds.
+- yfinance data (market intelligence, valuation indicators) is cached for 4 hours; IBKR market data refreshes every 60 seconds. Install `diskcache` (`pip install diskcache`) to persist the cache across process restarts — without it the app falls back to an in-memory cache automatically.
 
 ---
 
