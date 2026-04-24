@@ -16,10 +16,9 @@ from datetime import date, datetime
 
 import dash
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import requests
-from dash import ALL, ctx, dash_table, dcc, html, no_update
+from dash import ALL, ctx, dcc, html, no_update
 from dash.dependencies import Input, Output, State
 
 import ai_provider
@@ -27,6 +26,7 @@ from coach import SCENARIOS, render_scenario
 from config import cfg
 from dashboard_core import data_callbacks as _data_callbacks_mod
 from dashboard_core import export as _export_mod
+from dashboard_core import summary as _summary_mod
 from dashboard_core.helpers import (
     make_table,
     section_label,
@@ -281,190 +281,9 @@ app.layout = html.Div([
 _data_callbacks_mod.register(app)
 
 
-# ── Summary cards ──────────────────────────────────────────────────────────────
-
-@app.callback(
-    Output('summary-cards', 'children'),
-    Input('portfolio-data', 'data'),
-)
-def update_summary(data):
-    if not data or 'summary' not in data:
-        return []
-
-    s = data['summary']
-    a = data.get('account', {})
-    rate = a.get('eurusd_rate', 1.08)
-
-    total_val  = s['total_value']
-    unreal_pnl = s['total_unrealized_pnl']
-    daily_pnl  = a.get('daily_pnl') or s.get('total_daily_pnl')
-    cash_eur   = a.get('cash_eur', 0)
-    pnl_pct    = s.get('total_pnl_pct')
-
-    def card(label, eur_val, pnl_pct=None, is_pnl=False, note=None):
-        positive = eur_val >= 0
-        accent = ('#16a34a' if positive else '#dc2626') if is_pnl else '#111'
-        val_str = f"€{eur_val:+,.2f}" if is_pnl else f"€{eur_val:,.2f}"
-        usd_str = f"${eur_val * rate:,.2f}"
-        return html.Div([
-            html.P(label, style={
-                'fontSize': '14px', 'color': '#999', 'margin': '0 0 10px',
-                'textTransform': 'uppercase', 'letterSpacing': '0.05em', 'fontWeight': '500',
-            }),
-            html.P(val_str, style={
-                'fontSize': '26px', 'fontWeight': '600', 'margin': '0',
-                'color': accent if is_pnl else '#111', 'letterSpacing': '-0.5px',
-            }),
-            html.Div([
-                html.Span(usd_str, style={'fontSize': '14px', 'color': '#999'}),
-                html.Span(f" · {pnl_pct:+.2f}%",
-                          style={'fontSize': '14px', 'color': accent}) if pnl_pct is not None else None,
-                html.Span(f" · {note}",
-                          style={'fontSize': '14px', 'color': '#888'}) if note is not None else None,
-            ], style={'marginTop': '4px'}),
-        ], style={
-            'background': '#fafafa', 'borderRadius': '12px', 'padding': '18px',
-            'borderLeft': f'3px solid {"#ebebeb" if not is_pnl else accent}',
-        })
-
-    total_val_eur = to_eur(total_val, rate)
-    cash_pct = round(cash_eur / total_val_eur * 100, 1) if total_val_eur else None
-    return [
-        card("Total Value",    total_val_eur),
-        card("Unrealized P&L", to_eur(unreal_pnl, rate), pnl_pct=pnl_pct, is_pnl=True),
-        card("Today's P&L",    to_eur(daily_pnl, rate) if daily_pnl is not None else 0, is_pnl=True),
-        card("Cash",           cash_eur, note=f"{cash_pct:.1f}% of portfolio" if cash_pct is not None else None),
-    ]
-
-
-# ── Holdings ───────────────────────────────────────────────────────────────────
-
-@app.callback(
-    Output('holdings-table', 'children'),
-    Output('positions-count', 'children'),
-    Output('stale-price-badge', 'children'),
-    Input('portfolio-data', 'data'),
-)
-def update_holdings(data):
-    if not data or 'positions' not in data:
-        return html.P("—", style={'color': '#ccc', 'fontSize': '15px'}), '', None
-    df = pd.DataFrame(data['positions'])
-    rate = data.get('account', {}).get('eurusd_rate', 1.08)
-
-    count = f"{len(df)} positions"
-    any_stale = df.get('price_stale', pd.Series(False)).any()
-    stale_badge = html.Span("● Market closed · last-close prices",
-                            style={
-                                'fontSize': '13px', 'color': '#b45309',
-                                'background': '#fffbeb', 'border': '0.5px solid #fde68a',
-                                'padding': '3px 9px', 'borderRadius': '20px',
-                                'marginTop': '-10px',
-                            }) if any_stale else None
-
-    # Pre-format display columns
-    df['price_display'] = df.apply(
-        lambda r: f"~${r['current_price']:,.2f}" if r.get('price_stale') else f"${r['current_price']:,.2f}",
-        axis=1
-    )
-    df['value_eur_display'] = (df['market_value'] / rate).apply(lambda v: f"€{v:,.0f}")
-    df['weight_display']    = df['allocation_pct'].apply(lambda v: f"{v:.1f}%")
-    df['pnl_pct_display']   = df['pnl_pct'].apply(lambda v: f"{v:+.2f}%")
-
-    table_data = df[[
-        'ticker', 'quantity', 'avg_cost', 'price_display',
-        'market_value', 'value_eur_display', 'pnl_pct', 'pnl_pct_display',
-        'unrealized_pnl', 'weight_display',
-    ]].to_dict('records')
-
-    table = dash_table.DataTable(
-        id='holdings-datatable',
-        columns=[
-            {'name': 'Ticker',   'id': 'ticker',           'type': 'text'},
-            {'name': 'Qty',      'id': 'quantity',          'type': 'numeric'},
-            {'name': 'Avg Cost', 'id': 'avg_cost',          'type': 'numeric',
-             'format': {'specifier': '$,.2f'}},
-            {'name': 'Price',    'id': 'price_display',     'type': 'text'},
-            {'name': 'Value ($)', 'id': 'market_value',     'type': 'numeric',
-             'format': {'specifier': '$,.0f'}},
-            {'name': 'Value (€)', 'id': 'value_eur_display',  'type': 'text'},
-            {'name': 'P&L %',   'id': 'pnl_pct_display',    'type': 'text'},
-            {'name': 'P&L ($)', 'id': 'unrealized_pnl',    'type': 'numeric',
-             'format': {'specifier': '+$,.2f'}},
-            {'name': 'Weight',  'id': 'weight_display',     'type': 'text'},
-        ],
-        data=table_data,
-        sort_action='native',
-        sort_by=[{'column_id': 'market_value', 'direction': 'desc'}],
-        page_size=50,
-        style_as_list_view=True,
-        style_table={'overflowX': 'auto'},
-        style_header={
-            'fontSize': '14px', 'color': '#999', 'fontWeight': '500',
-            'textTransform': 'uppercase', 'letterSpacing': '0.04em',
-            'backgroundColor': '#fff', 'border': 'none',
-            'borderBottom': '0.5px solid #f5f5f5',
-            'paddingBottom': '14px',
-        },
-        style_cell={
-            'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-            'fontSize': '16px', 'padding': '12px 12px',
-            'backgroundColor': '#fff', 'color': '#111',
-            'border': 'none', 'borderBottom': '0.5px solid #f5f5f5',
-        },
-        style_cell_conditional=(
-            [{'if': {'column_id': 'ticker'}, 'fontWeight': '600', 'textAlign': 'left'}] +
-            [{'if': {'column_id': c}, 'textAlign': 'right'}
-             for c in ['quantity', 'avg_cost', 'price_display', 'market_value',
-                       'value_eur_display', 'pnl_pct_display', 'unrealized_pnl', 'weight_display']]
-        ),
-        style_data_conditional=[
-            {'if': {'filter_query': '{pnl_pct} >= 0', 'column_id': 'pnl_pct_display'},
-             'color': '#16a34a'},
-            {'if': {'filter_query': '{pnl_pct} < 0', 'column_id': 'pnl_pct_display'},
-             'color': '#dc2626'},
-            {'if': {'filter_query': '{unrealized_pnl} >= 0', 'column_id': 'unrealized_pnl'},
-             'color': '#16a34a'},
-            {'if': {'filter_query': '{unrealized_pnl} < 0', 'column_id': 'unrealized_pnl'},
-             'color': '#dc2626'},
-{'if': {'filter_query': '{price_display} contains "~"', 'column_id': 'price_display'},
-             'color': '#b45309'},
-            {'if': {'state': 'active'}, 'backgroundColor': '#f0f7ff', 'border': 'none'},
-        ],
-    )
-
-    return table, count, stale_badge
-
-
-# ── Donut ──────────────────────────────────────────────────────────────────────
-
-@app.callback(
-    Output('donut-chart', 'figure'),
-    Input('portfolio-data', 'data'),
-)
-def update_donut(data):
-    blank = go.Figure()
-    blank.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                        xaxis=dict(visible=False), yaxis=dict(visible=False))
-    if not data or 'positions' not in data:
-        return blank
-    df = pd.DataFrame(data['positions'])
-    colors = ['#378ADD', '#f97316', '#a855f7', '#22c55e', '#eab308', '#ec4899', '#14b8a6']
-    fig = px.pie(df, values='market_value', names='ticker', hole=0.68,
-                 color_discrete_sequence=colors)
-    fig.update_traces(
-        textposition='none',
-        textinfo='none',
-        hovertemplate='<b>%{label}</b><br>$%{value:,.2f}  ·  %{percent}<extra></extra>',
-    )
-    fig.update_layout(
-        margin=dict(t=0, b=0, l=0, r=0),
-        showlegend=True,
-        legend=dict(orientation='v', x=0.5, y=0.5, xanchor='center', yanchor='middle',
-                    font=dict(size=12, color='#555'), itemclick=False, itemdoubleclick=False),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-    )
-    return fig
+# ── Summary cards + Holdings + Donut + Dividends ──────────────────────────────
+# Moved to dashboard_core/summary.py.
+_summary_mod.register(app)
 
 
 # ── Export ─────────────────────────────────────────────────────────────────────
@@ -907,114 +726,7 @@ def handle_position_trade_upload(contents_list, filenames_list):
 
 
 # ── Dividends ─────────────────────────────────────────────────────────────────
-
-@app.callback(
-    Output('dividend-section', 'children'),
-    Input('portfolio-data', 'data'),
-    Input('refresh-interval', 'n_intervals'),
-)
-def update_dividends(data, *_):
-    if not data or 'positions' not in data:
-        return None
-
-    positions = data['positions']
-    div_data  = data.get('div_data', {})
-    rate      = data.get('account', {}).get('eurusd_rate', 1.08)
-
-    # Build per-position dividend enrichment
-    div_positions = []
-    for p in positions:
-        sym  = p['ticker']
-        d    = div_data.get(sym, {})
-        n12  = d.get('next_12m')
-        p12  = d.get('past_12m')
-        price = p['current_price']
-        qty   = p['quantity']
-        if not (n12 or p12):
-            continue
-        annual_dps    = n12 or p12
-        yield_pct     = round(annual_dps / price * 100, 2) if price else None
-        annual_income = round(annual_dps * qty, 2)
-        div_positions.append({
-            'ticker':       sym,
-            'yield_pct':    yield_pct,
-            'annual_dps':   annual_dps,
-            'annual_income':annual_income,
-            'next_date':    d.get('next_date'),
-            'next_amount':  d.get('next_amount'),
-            'quantity':     qty,
-        })
-
-    annual_income = sum(p['annual_income'] for p in div_positions)
-
-    if not div_positions:
-        return html.Div(
-            html.P("No dividend data — positions may not pay dividends or market data is unavailable.",
-                   style={'fontSize': '15px', 'color': '#bbb', 'textAlign': 'center', 'padding': '24px 0'}),
-            style=CARD)
-
-    # ── Summary cards ────────────────────────────────────────────────────────
-    def div_card(label, value, sub=None, color='#111'):
-        return html.Div([
-            html.P(label, style={'fontSize': '12px', 'color': '#999', 'margin': '0 0 6px',
-                                 'textTransform': 'uppercase', 'letterSpacing': '0.05em',
-                                 'fontWeight': '500'}),
-            html.P(value, style={'fontSize': '20px', 'fontWeight': '600', 'margin': '0',
-                                 'color': color, 'letterSpacing': '-0.5px'}),
-            html.P(sub, style={'fontSize': '13px', 'color': '#888', 'margin': '3px 0 0'}) if sub else None,
-        ], style={'background': '#fafafa', 'borderRadius': '12px', 'padding': '10px 14px',
-                  'borderLeft': '3px solid #ebebeb'})
-
-    portfolio_yield = round(annual_income / data['summary']['total_value'] * 100, 2) \
-        if annual_income and data.get('summary', {}).get('total_value') else None
-
-    summary_row = html.Div([
-        div_card("Projected Annual Income", f"${annual_income:,.2f}",
-                 sub=f"€{annual_income / rate:,.2f}"),
-        div_card("Portfolio Yield",
-                 f"{portfolio_yield:.2f}%" if portfolio_yield else "—",
-                 sub="Based on next 12M dividends"),
-    ], style={'display': 'grid', 'gridTemplateColumns': 'repeat(2, 1fr)',
-              'gap': '12px', 'marginBottom': '20px'})
-
-    # ── Per-position yield table ──────────────────────────────────────────────
-    if div_positions:
-        td_r = lambda v, **kw: html.Td(v, style={'textAlign': 'right', 'padding': '10px 12px', **kw})
-        td_l = lambda v, **kw: html.Td(v, style={'textAlign': 'left',  'padding': '10px 12px', **kw})
-
-        rows = []
-        for p in sorted(div_positions, key=lambda x: x['annual_income'], reverse=True):
-            nxt_date = p['next_date'] or '—'
-            nxt_amt  = f"${p['next_amount']:,.4f}" if p['next_amount'] else '—'
-            nxt_pay  = f"${p['next_amount'] * p['quantity']:,.2f}" \
-                       if p['next_amount'] else '—'
-            yield_color = '#16a34a' if (p['yield_pct'] or 0) >= 2 else '#111'
-            rows.append(html.Tr([
-                td_l(html.Span(p['ticker'], style={'fontWeight': '600', 'color': '#111'})),
-                td_r(f"{p['yield_pct']:.2f}%" if p['yield_pct'] else '—', color=yield_color),
-                td_r(f"${p['annual_dps']:,.4f}"),
-                td_r(f"${p['annual_income']:,.2f}"),
-                td_r(nxt_date, color='#666'),
-                td_r(nxt_amt,  color='#666'),
-                td_r(nxt_pay),
-            ], style={'borderTop': '0.5px solid #f5f5f5'}))
-
-        yield_table = html.Div([
-            section_label("Yield per Position"),
-            make_table(
-                ['Ticker', 'Yield', 'Ann. DPS', 'Ann. Income', 'Next Ex-Date', 'Next Div/Share', 'Next Payout'],
-                rows),
-        ], style={'marginBottom': '20px'})
-    else:
-        yield_table = None
-
-    return html.Div([
-        section_label("Dividends"),
-        summary_row,
-        yield_table,
-    ], style=CARD)
-
-
+# Moved to dashboard_core/summary.py (registered with the rest of summary).
 
 
 
