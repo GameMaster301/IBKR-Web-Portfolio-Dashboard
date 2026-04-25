@@ -28,6 +28,7 @@ import asyncio
 import concurrent.futures
 import logging
 import threading
+import time
 from datetime import datetime, timedelta
 
 from ib_async import IB, ExecutionFilter, Forex

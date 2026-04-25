@@ -206,7 +206,7 @@ LLM_PROMPTS = [
 
 # ── Compact context builder ───────────────────────────────────────────────────
 
-def build_portfolio_context(port, intel, val) -> str:
+def build_portfolio_context(port, intel, val, trades=None) -> str:
     """
     Build a compact JSON blob with everything the LLM needs. Kept small so
     even short-context providers have no problem.
@@ -256,4 +256,15 @@ def build_portfolio_context(port, intel, val) -> str:
             'shiller_cape':      (val.get('cape') or {}).get('value'),
             'us_10y_yield':      (val.get('treasury') or {}).get('value'),
         }
+    if trades:
+        # Include the 50 most recent trades, compact shape, sorted newest-first.
+        recent = sorted(trades, key=lambda t: t.get('time') or '', reverse=True)[:50]
+        compact['trade_history'] = [{
+            'ticker': t.get('ticker'),
+            'side':   t.get('side'),
+            'shares': t.get('shares'),
+            'price':  t.get('price'),
+            'time':   t.get('time'),
+            'value':  t.get('value'),
+        } for t in recent]
     return json.dumps(compact, separators=(',', ':'))

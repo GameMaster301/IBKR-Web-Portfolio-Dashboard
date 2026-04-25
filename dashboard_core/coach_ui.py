@@ -383,6 +383,10 @@ def register(app):
         if not q:
             return noop
 
+        # Starters and follow-up chips just pre-fill the input — let the user send.
+        if isinstance(trig, dict) and trig.get('type') in ('coach-starter', 'coach-followup'):
+            return no_update, q, False, False, "Send ↑"
+
         # Set pending-q → triggers run_llm via its Input. Disable input/button
         # while the request is in flight; run_llm re-enables them on completion.
         return q, '', True, True, "Sending…"
@@ -402,9 +406,10 @@ def register(app):
         State('portfolio-data', 'data'),
         State('market-intel-data', 'data'),
         State('valuation-data', 'data'),
+        State('uploaded-trades', 'data'),
         prevent_initial_call=True,
     )
-    def run_llm(question, key, threads, active_id, port, intel, val):
+    def run_llm(question, key, threads, active_id, port, intel, val, trades):
         # Triggered when submit_question writes a question into pending-q.
         # Also fires when we clear pending-q at the end — we bail on that.
         log.info("coach.run_llm fired: question=%r key_present=%s",
@@ -430,7 +435,7 @@ def register(app):
             try:
                 provider = ai_provider.detect_provider(key)
                 log.info("coach: calling provider=%s", provider)
-                context_json = ai_provider.build_portfolio_context(port, intel, val)
+                context_json = ai_provider.build_portfolio_context(port, intel, val, trades)
                 t0 = time.time()
                 answer, followups = ai_provider.ask(key, context_json, question,
                                                     history=history)
@@ -1032,7 +1037,6 @@ def register(app):
             })
 
             # Status bar: connection chip + clear chat + clear key
-            has_history = bool(chat_history)
             status_bar = html.Div([
                 html.Span([
                     html.Span("●", style={'color': COLOR_GOOD, 'marginRight': '6px'}),
@@ -1044,9 +1048,7 @@ def register(app):
                 html.Div([
                     html.Button("Clear chat", id='coach-clear-chat-btn', n_clicks=0,
                                 style={**_COACH_BTN, 'padding': '3px 10px',
-                                       'fontSize': '12px', 'marginRight': '6px',
-                                       'opacity': '1' if has_history else '0.4',
-                                       'pointerEvents': 'auto' if has_history else 'none'}),
+                                       'fontSize': '12px', 'marginRight': '6px'}),
                     html.Button("Clear key", id='coach-clear-key-btn', n_clicks=0,
                                 style={**_COACH_BTN, 'padding': '3px 10px',
                                        'fontSize': '12px'}),
@@ -1072,7 +1074,7 @@ def register(app):
                     id='coach-input', type='text', value=prefill or '', n_submit=0,
                     placeholder='Press enter to send',
                     autoComplete='off', debounce=False,
-                    style={'flex': '1', 'padding': '10px 14px', 'fontSize': '14px',
+                    style={'flex': '1', 'padding': '5px 10px', 'fontSize': '14px',
                            'lineHeight': '1.5', 'boxSizing': 'border-box',
                            'border': '0.5px solid #ddd', 'borderRadius': '10px',
                            'background': COLOR_SURFACE_WHITE, 'color': COLOR_TEXT_STRONG,

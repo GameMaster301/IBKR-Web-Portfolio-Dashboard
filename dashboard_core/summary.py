@@ -10,7 +10,7 @@ from __future__ import annotations
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import Input, Output, dash_table, html
+from dash import Input, Output, State, dash_table, html
 
 from dashboard_core.helpers import EURUSD_FALLBACK, make_table, section_label, to_eur
 from decorators import NotReadyError, safe_render
@@ -18,6 +18,7 @@ from schemas import PortfolioData
 from styles import (
     CARD,
     COLOR_BAD,
+    COLOR_BORDER_STRONG,
     COLOR_BRAND,
     COLOR_GOOD,
     COLOR_GOOD_SOFT,
@@ -41,11 +42,21 @@ def register(app):
     @app.callback(
         Output('summary-cards', 'children'),
         Input('portfolio-data', 'data'),
+        State('connection-status', 'data'),
     )
     @safe_render('Summary')
-    def update_summary(data: PortfolioData | None):
+    def update_summary(data: PortfolioData | None, status):
         if not data or 'summary' not in data:
-            raise NotReadyError('Loading portfolio…')
+            if status == 'disconnected':
+                return []
+            def _skel_card():
+                return html.Div([
+                    html.Div(className='skeleton-block', style={'height': '11px', 'width': '55%', 'marginBottom': '14px'}),
+                    html.Div(className='skeleton-block', style={'height': '28px', 'width': '78%', 'marginBottom': '10px'}),
+                    html.Div(className='skeleton-block', style={'height': '11px', 'width': '40%'}),
+                ], style={'background': COLOR_SURFACE_SOFT, 'borderRadius': '12px',
+                          'padding': '18px', 'borderLeft': f'3px solid {COLOR_BORDER_STRONG}'})
+            return [_skel_card() for _ in range(4)]
 
         s = data['summary']
         a = data.get('account', {})
@@ -98,10 +109,19 @@ def register(app):
         Output('positions-count', 'children'),
         Output('stale-price-badge', 'children'),
         Input('portfolio-data', 'data'),
+        State('connection-status', 'data'),
     )
-    def update_holdings(data):
+    def update_holdings(data, status):
         if not data or 'positions' not in data:
-            return html.P("—", style={'color': '#ccc', 'fontSize': '15px'}), '', None
+            if status == 'disconnected':
+                return None, '', None
+            skel_row = html.Div([
+                html.Div(className='skeleton-block', style={'height': '13px', 'width': w, 'borderRadius': '4px'})
+                for w in ('12%', '18%', '15%', '14%', '14%', '13%')
+            ], style={'display': 'flex', 'gap': '12px', 'alignItems': 'center',
+                      'padding': '10px 0', 'borderBottom': f'0.5px solid {COLOR_BORDER_STRONG}'})
+            return html.Div([skel_row for _ in range(5)],
+                            style={'padding': '4px 0'}), '', None
         df = pd.DataFrame(data['positions'])
         rate = data.get('account', {}).get('eurusd_rate', EURUSD_FALLBACK)
 

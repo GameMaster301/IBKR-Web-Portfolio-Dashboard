@@ -24,12 +24,32 @@ from dashboard import app
 from ibkr_client import set_demo_mode, start_connection
 
 # ── Logging ────────────────────────────────────────────────────────────────────
-# Use a slightly richer format so Docker log aggregators can parse level / name.
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s  %(levelname)-8s  %(name)s  %(message)s',
-    datefmt='%Y-%m-%dT%H:%M:%S',
-)
+# Set LOG_FORMAT=json in the environment (or in Docker) to emit newline-
+# delimited JSON logs suitable for Loki / CloudWatch / any log aggregator.
+# Default is the human-readable format, which is easier to follow locally.
+if os.environ.get('LOG_FORMAT', '').lower() == 'json':
+    try:
+        from pythonjsonlogger import jsonlogger
+        _handler = logging.StreamHandler()
+        _handler.setFormatter(jsonlogger.JsonFormatter(
+            '%(asctime)s %(levelname)s %(name)s %(message)s',
+            datefmt='%Y-%m-%dT%H:%M:%S',
+        ))
+        logging.root.setLevel(logging.INFO)
+        logging.root.addHandler(_handler)
+    except ImportError:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s  %(levelname)-8s  %(name)s  %(message)s',
+            datefmt='%Y-%m-%dT%H:%M:%S',
+        )
+else:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s  %(levelname)-8s  %(name)s  %(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S',
+    )
+
 # Quiet third-party chatter. ib_async logs every market-data warning and
 # connection handshake at INFO; yfinance logs 404s for tickers Yahoo doesn't
 # have (normal for European ETFs like SPPE). None of it is actionable.

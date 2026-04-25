@@ -81,6 +81,19 @@
   box-sizing: border-box;
 }
 
+/* Skeleton shimmer — used by summary cards and holdings table while loading */
+@keyframes skeletonShimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+
+.skeleton-block {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e6e6e6 50%, #f0f0f0 75%);
+  background-size: 1200px 100%;
+  animation: skeletonShimmer 1.6s ease-in-out infinite;
+  border-radius: 5px;
+}
+
 /* Coach chat: thinking indicator dots + chip hover */
 @keyframes coachPulse {
   0%, 60%, 100% { opacity: 0.25; }

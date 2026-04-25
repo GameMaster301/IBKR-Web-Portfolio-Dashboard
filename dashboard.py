@@ -13,6 +13,7 @@ from dashboard_core import intel as _intel_mod
 from dashboard_core import layout as _layout_mod
 from dashboard_core import summary as _summary_mod
 from dashboard_core import valuation as _valuation_mod
+import health
 from styles import LINK_PILL
 
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
@@ -30,3 +31,5 @@ _detail_mod.register(app)
 _intel_mod.register(app)
 _valuation_mod.register(app)
 _coach_ui_mod.register(app)
+
+health.register(app.server)

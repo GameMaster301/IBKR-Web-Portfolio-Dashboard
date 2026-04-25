@@ -29,6 +29,7 @@ from ibkr_client import (
 from styles import (
     COLOR_BAD,
     COLOR_BAD_BG,
+    COLOR_BORDER,
     COLOR_BORDER_STRONG,
     COLOR_GOOD,
     COLOR_GOOD_BG,
@@ -153,23 +154,24 @@ def register(app):
 
         if status in ('loading', 'connecting'):
             spinner = html.Div(className='ibkr-spinner', style={
-                'width': '44px', 'height': '44px', 'margin': '0 auto 18px',
-                'border': '4px solid #e5e7eb', 'borderTop': '4px solid #16a34a',
+                'width': '36px', 'height': '36px', 'margin': '0 auto 24px',
+                'border': '3px solid #e5e7eb', 'borderTop': f'3px solid {COLOR_GOOD}',
                 'borderRadius': '50%',
             })
-            title = "Starting dashboard..." if status == 'loading' else "Connecting to IBKR..."
+            title = "Starting dashboard…" if status == 'loading' else "Connecting to IBKR…"
             body  = ("Loading your portfolio. This takes a few seconds."
                      if status == 'loading'
-                     else "Reaching IB Gateway / TWS. Trying all common ports — this takes up to 20 seconds.")
+                     else "Reaching IB Gateway / TWS. Trying all common ports — takes up to 20 seconds.")
             banner = html.Div([
                 spinner,
-                html.P(title, style={'fontSize': '17px', 'fontWeight': '600',
-                                     'color': COLOR_TEXT_STRONG, 'margin': '0 0 6px'}),
-                html.P(body, style={'fontSize': '15px', 'color': COLOR_TEXT_MUTED,
-                                    'margin': '0', 'lineHeight': '1.6'}),
-            ], style={'textAlign': 'center', 'padding': '48px 32px',
+                html.P(title, style={'fontSize': '18px', 'fontWeight': '600',
+                                     'color': COLOR_TEXT_STRONG, 'margin': '0',
+                                     'letterSpacing': '-0.3px'}),
+                html.P(body, style={'fontSize': '14px', 'color': COLOR_TEXT_MUTED,
+                                    'margin': '6px 0 0', 'lineHeight': '1.5'}),
+            ], style={'textAlign': 'center', 'padding': '52px 40px',
                       'background': COLOR_SURFACE_SOFT, 'borderRadius': '14px',
-                      'border': '0.5px solid #ebebeb'})
+                      'border': f'0.5px solid {COLOR_BORDER}'})
             return banner, badge("Connecting...", COLOR_TEXT_MUTED, COLOR_SURFACE, COLOR_BORDER_STRONG), "", retry_hidden, exit_demo_hidden
 
         if status == 'disconnected':
