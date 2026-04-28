@@ -149,7 +149,7 @@ def get_buffett_indicator() -> dict | None:
                 req = urllib.request.Request(fred_url, headers={'User-Agent': _UA})
                 # Short timeout — FRED occasionally stalls and we'd rather fall
                 # back to World Bank than block the Market Valuation panel.
-                with urllib.request.urlopen(req, timeout=5) as resp:
+                with urllib.request.urlopen(req, timeout=3) as resp:
                     raw = resp.read().decode('utf-8')
                 if raw.lstrip().startswith('<'):
                     raise ValueError('FRED returned HTML')
@@ -186,7 +186,7 @@ def get_buffett_indicator() -> dict | None:
                     '?format=json&mrv=3&per_page=3'
                 )
                 req = urllib.request.Request(url, headers={'User-Agent': _UA})
-                with urllib.request.urlopen(req, timeout=15) as resp:
+                with urllib.request.urlopen(req, timeout=6) as resp:
                     data = json.loads(resp.read())
                 for record in (data[1] or []):
                     if record.get('value') is not None:
@@ -242,7 +242,7 @@ def get_sp500_pe() -> dict | None:
             url = 'https://www.multpl.com/s-p-500-pe-ratio/table/by-month'
             req = urllib.request.Request(
                 url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=6) as resp:
                 html = resp.read().decode('utf-8', errors='replace')
             rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)
             values = []
@@ -314,7 +314,7 @@ def get_shiller_cape() -> dict | None:
         url = 'https://www.multpl.com/shiller-pe/table/by-month'
         req = urllib.request.Request(
             url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=6) as resp:
             html = resp.read().decode('utf-8', errors='replace')
 
         rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html, re.DOTALL)

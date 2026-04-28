@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from dash import Input, Output, State, dash_table, html
+from dash import Input, Output, State, dash_table, dcc, html
 
 from dashboard_core.helpers import EURUSD_FALLBACK, make_table, section_label, to_eur
 from decorators import NotReadyError, safe_render
@@ -210,15 +209,20 @@ def register(app):
 
     # ── Donut ─────────────────────────────────────────────────────────────────
     @app.callback(
-        Output('donut-chart', 'figure'),
+        Output('donut-container', 'children'),
         Input('portfolio-data', 'data'),
     )
     def update_donut(data):
-        blank = go.Figure()
-        blank.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                            xaxis=dict(visible=False), yaxis=dict(visible=False))
         if not data or 'positions' not in data:
-            return blank
+            return html.Div([
+                html.Div(className='skeleton-block', style={
+                    'width': '160px', 'height': '160px', 'borderRadius': '50%',
+                    'margin': '24px auto 20px',
+                }),
+                html.Div(className='skeleton-block', style={'height': '11px', 'width': '70%', 'margin': '0 auto 8px'}),
+                html.Div(className='skeleton-block', style={'height': '11px', 'width': '55%', 'margin': '0 auto 8px'}),
+                html.Div(className='skeleton-block', style={'height': '11px', 'width': '60%', 'margin': '0 auto'}),
+            ])
         df = pd.DataFrame(data['positions'])
         colors = [COLOR_BRAND, COLOR_WARN_SOFT, '#a855f7', COLOR_GOOD_SOFT, COLOR_WARN_YELLOW, '#ec4899', '#14b8a6']
         fig = px.pie(df, values='market_value', names='ticker', hole=0.68,
@@ -236,17 +240,36 @@ def register(app):
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
         )
-        return fig
+        return dcc.Graph(figure=fig, config={'displayModeBar': False}, style={'height': '260px'})
+
+    # ── Holdings + Allocation row visibility ──────────────────────────────────
+    # Hide the card shells entirely when disconnected so they don't show as
+    # hollow boxes.  During connecting they stay visible with skeleton content.
+    @app.callback(
+        Output('holdings-donut-row', 'style'),
+        Input('connection-status', 'data'),
+        Input('portfolio-data', 'data'),
+    )
+    def toggle_holdings_row(status, _data):
+        base = (status or '').split(':')[0]
+        visible = {'display': 'flex', 'gap': '14px'}
+        if base == 'disconnected':
+            return {**visible, 'display': 'none'}
+        return visible
 
     # ── Dividends ─────────────────────────────────────────────────────────────
     @app.callback(
         Output('dividend-section', 'children'),
         Input('portfolio-data', 'data'),
         Input('refresh-interval', 'n_intervals'),
+        State('connection-status', 'data'),
     )
     @safe_render('Dividends')
-    def update_dividends(data: PortfolioData | None, *_):
+    def update_dividends(data: PortfolioData | None, _interval, status):
         if not data or 'positions' not in data:
+            base = (status or '').split(':')[0]
+            if base in ('disconnected', 'no_positions'):
+                return []
             raise NotReadyError('Loading dividend data…')
 
         positions = data['positions']

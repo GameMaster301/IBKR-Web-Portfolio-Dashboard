@@ -21,7 +21,7 @@ from datetime import date, datetime
 import plotly.graph_objects as go
 from dash import Input, Output, State, ctx, dcc, html, no_update
 
-from dashboard_core.helpers import EURUSD_FALLBACK, make_table, section_label, to_eur
+from dashboard_core.helpers import EURUSD_FALLBACK, section_label, to_eur
 from decorators import NotReadyError, safe_render
 from market_intel import get_earnings_data, get_sector_geo
 from net_util import run_parallel
@@ -40,6 +40,8 @@ from styles import (
     COLOR_WARN,
     COLOR_WARN_SOFT,
     COLOR_WARN_YELLOW,
+    TABLE_HEADER_CELL,
+    TABLE_WRAPPER,
 )
 
 log = logging.getLogger(__name__)
@@ -125,25 +127,30 @@ def register(app):
     @app.callback(
         Output('sector-geo-section', 'children'),
         Input('market-intel-data', 'data'),
+        Input('connection-status', 'data'),
         State('portfolio-data', 'data'),
     )
     @safe_render('Sector & Geography')
-    def render_sector_geo(intel: MarketIntelData | None, port_data: PortfolioData | None):
-        return _render_sector_geo_inner(intel, port_data)
+    def render_sector_geo(intel, status, port_data):
+        return _render_sector_geo_inner(intel, port_data, status)
 
     # ── 3. Earnings calendar ─────────────────────────────────────────────────
     @app.callback(
         Output('earnings-section', 'children'),
         Input('market-intel-data', 'data'),
+        Input('connection-status', 'data'),
         State('portfolio-data', 'data'),
     )
     @safe_render('Earnings')
-    def render_earnings(intel: MarketIntelData | None, port_data: PortfolioData | None):
-        return _render_earnings_inner(intel, port_data)
+    def render_earnings(intel, status, port_data):
+        return _render_earnings_inner(intel, port_data, status)
 
 
-def _render_sector_geo_inner(intel: MarketIntelData | None, port_data: PortfolioData | None):
+def _render_sector_geo_inner(intel, port_data, status=''):
     if not intel:
+        base = (status or '').split(':')[0]
+        if base in ('disconnected', 'no_positions'):
+            return []
         raise NotReadyError('Loading sector & geography data…')
     if not port_data or 'positions' not in port_data:
         return None
@@ -237,44 +244,26 @@ def _render_sector_geo_inner(intel: MarketIntelData | None, port_data: Portfolio
     country_colors = [COLOR_BRAND, COLOR_GOOD_SOFT, COLOR_WARN_SOFT, '#a855f7',
                       COLOR_WARN_YELLOW, '#ec4899', '#14b8a6', '#6366f1']
 
-    if len(cty_labels) <= 2:
-        bar = go.Figure(go.Pie(
-            labels=cty_labels, values=cty_values, hole=0.62,
-            textposition='none',
-            marker=dict(colors=country_colors[:len(cty_labels)]),
-            hovertemplate='<b>%{label}</b><br>%{percent:.1%}<extra></extra>',
-        ))
-        center_text = (f"{cty_values[0]:.0f}%<br>"
-                       f"<span style='font-size:11px;color:#888'>{cty_labels[0]}</span>"
-                       if len(cty_labels) == 1 else '')
-        bar.update_layout(
-            margin=dict(t=0, b=0, l=0, r=0),
-            showlegend=(len(cty_labels) > 1),
-            legend=dict(orientation='h', yanchor='bottom', y=-0.15,
-                        xanchor='center', x=0.5, font=dict(size=11)),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            height=200,
-            annotations=[dict(text=center_text, x=0.5, y=0.5,
-                              font=dict(size=20, color=COLOR_TEXT),
-                              showarrow=False)] if center_text else [],
-        )
-    else:
-        bar = go.Figure(go.Bar(
-            x=cty_values, y=cty_labels,
-            orientation='h',
-            marker=dict(color=COLOR_BRAND, opacity=0.75),
-            hovertemplate='%{y}: <b>%{x:.1f}%</b><extra></extra>',
-            text=[f'{v:.1f}%' for v in cty_values],
-            textposition='outside',
-            textfont=dict(size=11, color=COLOR_TEXT_MID),
-        ))
-        bar.update_layout(
-            margin=dict(t=0, b=0, l=0, r=80),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(visible=False),
-            yaxis=dict(tickfont=dict(size=11), autorange='reversed'),
-            height=200,
-        )
+    center_text = (f"{cty_values[0]:.0f}%<br>"
+                   f"<span style='font-size:11px;color:#888'>{cty_labels[0]}</span>"
+                   if len(cty_labels) == 1 else '')
+    bar = go.Figure(go.Pie(
+        labels=cty_labels, values=cty_values, hole=0.62,
+        textposition='none',
+        marker=dict(colors=country_colors[:len(cty_labels)]),
+        hovertemplate='<b>%{label}</b><br>%{percent:.1%}<extra></extra>',
+    ))
+    bar.update_layout(
+        margin=dict(t=0, b=0, l=0, r=0),
+        showlegend=(len(cty_labels) > 1),
+        legend=dict(orientation='h', yanchor='bottom', y=-0.15,
+                    xanchor='center', x=0.5, font=dict(size=11)),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        height=200,
+        annotations=[dict(text=center_text, x=0.5, y=0.5,
+                          font=dict(size=20, color=COLOR_TEXT),
+                          showarrow=False)] if center_text else [],
+    )
 
     # ── Sector breakdown legend table ────────────────────────────────────────
     legend_sectors: list = []
@@ -302,50 +291,58 @@ def _render_sector_geo_inner(intel: MarketIntelData | None, port_data: Portfolio
                 'width': '8px', 'height': '8px', 'borderRadius': '50%',
                 'background': dot_color, 'display': 'inline-block',
             }), style={'padding': '6px 8px 6px 0', 'width': '17px'}),
-            html.Td(sec,         style={'padding': '6px 12px 6px 0',
-                                        'fontSize': '15px', 'fontWeight': '500'}),
+            html.Td(sec, style={'padding': '6px 12px 6px 0',
+                                'fontSize': '15px', 'fontWeight': '500'}),
             html.Td(f'{pct:.1f}%', style={'padding': '6px 12px', 'textAlign': 'right',
                                            'fontSize': '15px', 'color': COLOR_TEXT_MID}),
-            html.Td(tickers_str,   style={'padding': '6px 0', 'fontSize': '14px',
-                                           'color': COLOR_TEXT_MUTED}),
+            html.Td(tickers_str, style={'padding': '6px 0', 'fontSize': '14px',
+                                         'color': COLOR_TEXT_MUTED}),
         ], style={'borderTop': '0.5px solid #f5f5f5'}))
 
     sector_legend = html.Table(
         [html.Tbody(legend_rows)],
-        style={'width': '100%', 'borderCollapse': 'collapse', 'marginTop': '17px'},
+        style={'borderCollapse': 'collapse', 'marginTop': '17px', 'width': '100%'},
     )
 
-    country_is_donut = len(cty_labels) <= 2
+    _label_style = {
+        'fontSize': '14px', 'color': COLOR_TEXT_MID,
+        'textTransform': 'uppercase', 'letterSpacing': '0.05em',
+        'fontWeight': '600', 'margin': '0 0 8px',
+        'textAlign': 'center',
+    }
 
     return html.Div([
         section_label("Sector & Geography Exposure"),
+
+        # ── Two equal chart columns ───────────────────────────────────────────
         html.Div([
             html.Div([
-                html.P("Sector", style={'fontSize': '14px', 'color': COLOR_TEXT_MID,
-                                        'textTransform': 'uppercase',
-                                        'letterSpacing': '0.04em', 'margin': '0 0 8px'}),
+                html.P("Sector", style=_label_style),
                 dcc.Graph(figure=donut, config={'displayModeBar': False}),
-            ], style={'flex': '2', 'minWidth': '200px'}),
+            ], style={'flex': '1', 'minWidth': '240px'}),
 
             html.Div([
-                html.P("Country", style={'fontSize': '14px', 'color': COLOR_TEXT_MID,
-                                          'textTransform': 'uppercase',
-                                          'letterSpacing': '0.04em',
-                                          'margin': '0 0 8px'}),
-                html.Div(
-                    dcc.Graph(figure=bar, config={'displayModeBar': False}),
-                    style={'maxWidth': '280px'} if country_is_donut else {},
-                ),
-            ], style={'flex': '2' if country_is_donut else '3',
-                      'minWidth': '200px'}),
+                html.P("Geography", style=_label_style),
+                dcc.Graph(figure=bar, config={'displayModeBar': False}),
+            ], style={'flex': '1', 'minWidth': '240px'}),
         ], style={'display': 'flex', 'gap': '24px', 'flexWrap': 'wrap',
-                  'alignItems': 'flex-start'}),
+                  'alignItems': 'flex-start', 'marginBottom': '8px'}),
+
+        # ── Divider ───────────────────────────────────────────────────────────
+        html.Hr(style={'border': 'none', 'borderTop': '0.5px solid #f0f0f0',
+                       'margin': '8px 0 0'}),
+
+        # ── Full-width breakdown table ────────────────────────────────────────
         sector_legend,
+
     ], style=CARD)
 
 
-def _render_earnings_inner(intel: MarketIntelData | None, port_data: PortfolioData | None):
+def _render_earnings_inner(intel, port_data, status=''):
     if not intel:
+        base = (status or '').split(':')[0]
+        if base in ('disconnected', 'no_positions'):
+            return []
         raise NotReadyError('Loading earnings data…')
 
     earnings = intel.get('earnings', {})
@@ -385,7 +382,7 @@ def _render_earnings_inner(intel: MarketIntelData | None, port_data: PortfolioDa
     td_l = lambda v, **kw: html.Td(v, style={'padding': '10px 12px',
                                                'textAlign': 'left', **kw})
     td_r = lambda v, **kw: html.Td(v, style={'padding': '10px 12px',
-                                               'textAlign': 'right', **kw})
+                                               'textAlign': 'center', **kw})
 
     table_rows = []
     for r in rows_data:
@@ -415,9 +412,18 @@ def _render_earnings_inner(intel: MarketIntelData | None, port_data: PortfolioDa
         ], style={'borderTop': '0.5px solid #f5f5f5',
                   'backgroundColor': row_bg}))
 
-    table = make_table(
-        ['Ticker', 'Earnings Date', 'When', 'Weight'],
-        table_rows)
+    cols = ['Ticker', 'Earnings Date', 'When', 'Weight']
+    header = html.Tr([
+        html.Th(c, style={**TABLE_HEADER_CELL,
+                          'textAlign': 'left' if i == 0 else 'center',
+                          'width': '25%',
+                          })
+        for i, c in enumerate(cols)
+    ])
+    table = html.Table(
+        [html.Thead(header), html.Tbody(table_rows)],
+        style={**TABLE_WRAPPER, 'tableLayout': 'fixed'},
+    )
 
     return html.Div([
         section_label("Earnings Calendar"),

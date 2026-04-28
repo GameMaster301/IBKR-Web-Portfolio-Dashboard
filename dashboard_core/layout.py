@@ -26,7 +26,7 @@ def build_layout(refresh_ms: int) -> html.Div:
         html.Div([
             html.Div([
                 html.Div([
-                    html.H1("Portfolio", style={'margin': '0', 'fontSize': '22px', 'fontWeight': '600', 'color': COLOR_TEXT_STRONG}),
+                    html.H1(id='portfolio-title', style={'margin': '0', 'fontSize': '22px', 'fontWeight': '600', 'color': COLOR_TEXT_STRONG}),
                     html.P(id='last-updated', style={'margin': '4px 0 0', 'color': COLOR_TEXT_MUTED, 'fontSize': '14px'}),
                 ]),
                 html.Div([
@@ -79,74 +79,69 @@ def build_layout(refresh_ms: int) -> html.Div:
             style={'display': 'none', 'textAlign': 'center', 'marginBottom': '24px'},
         ),
 
-        # 4 summary cards
-        html.Div(id='summary-cards', style={
-            'display': 'grid', 'gridTemplateColumns': 'repeat(4, 1fr)',
-            'gap': '14px', 'marginBottom': '24px',
-        }),
-
-        # Holdings + Donut
+        # All portfolio content — hidden entirely when disconnected
         html.Div([
+
+            # 4 summary cards
+            html.Div(id='summary-cards', style={
+                'display': 'grid', 'gridTemplateColumns': 'repeat(4, 1fr)',
+                'gap': '14px', 'marginBottom': '24px',
+            }),
+
+            # Holdings + Donut
             html.Div([
                 html.Div([
                     html.Div([
                         html.Div([
-                            section_label("Holdings"),
-                            html.Span(id='stale-price-badge'),
-                        ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px'}),
-                        html.Button("✨ Ask", id='coach-toggle-btn', n_clicks=0, style={
-                            'fontSize': '13px', 'color': COLOR_TEXT_MID, 'background': COLOR_SURFACE,
-                            'border': '0.5px solid #ddd', 'borderRadius': '8px',
-                            'padding': '6px 14px', 'cursor': 'pointer',
+                            html.Div([
+                                section_label("Holdings"),
+                                html.Span(id='stale-price-badge'),
+                            ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px'}),
+                            html.Button("✨ Ask", id='coach-toggle-btn', n_clicks=0, style={
+                                'fontSize': '13px', 'color': COLOR_TEXT_MID, 'background': COLOR_SURFACE,
+                                'border': '0.5px solid #ddd', 'borderRadius': '8px',
+                                'padding': '6px 14px', 'cursor': 'pointer',
+                            }),
+                        ], style={'display': 'flex', 'justifyContent': 'space-between',
+                                  'alignItems': 'center', 'marginBottom': '0px'}),
+                        html.Span(id='positions-count', style={
+                            'fontSize': '14px', 'color': COLOR_TEXT_MUTED,
+                            'display': 'block', 'marginBottom': '12px',
                         }),
-                    ], style={'display': 'flex', 'justifyContent': 'space-between',
-                              'alignItems': 'center', 'marginBottom': '0px'}),
-                    html.Span(id='positions-count', style={
-                        'fontSize': '14px', 'color': COLOR_TEXT_MUTED,
-                        'display': 'block', 'marginBottom': '12px',
-                    }),
-                ]),
-                html.Div(id='holdings-table'),
-            ], style={**CARD, 'flex': '1', 'alignSelf': 'flex-start'}),
+                    ]),
+                    html.Div(id='holdings-table'),
+                ], style={**CARD, 'flex': '1', 'alignSelf': 'flex-start'}),
 
-            html.Div([
-                section_label("Allocation"),
-                dcc.Graph(id='donut-chart', config={'displayModeBar': False}, style={'height': '260px'}),
-            ], style={**CARD, 'width': '260px', 'display': 'flex', 'flexDirection': 'column', 'justifyContent': 'flex-start'}),
-        ], style={'display': 'flex', 'gap': '14px'}),
+                html.Div([
+                    section_label("Allocation"),
+                    html.Div(id='donut-container', style={'flex': '1', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'flexDirection': 'column'}),
+                ], style={**CARD, 'width': '260px', 'display': 'flex', 'flexDirection': 'column'}),
+            ], id='holdings-donut-row', style={'display': 'flex', 'gap': '14px'}),
 
-        html.Div(id='position-detail'),
-        html.Div(id='coach-panel'),
+            html.Div(id='position-detail'),
+            html.Div(id='coach-panel'),
 
-        # Market Intelligence header
-        html.Div([
-            html.P("Market Intelligence", style={
-                'fontSize': '15px', 'color': COLOR_TEXT_MUTED, 'margin': '0 0 4px',
-                'textTransform': 'uppercase', 'letterSpacing': '0.07em', 'fontWeight': '600',
+            html.Div(id='sector-geo-section', style={
+                'marginTop': '40px', 'paddingTop': '32px',
+                'borderTop': '0.5px solid #f0f0f0',
             }),
-            html.P("Sector & geography ",
-                   style={'fontSize': '15px', 'color': COLOR_TEXT_MUTED, 'margin': '0'}),
-        ], style={
-            'marginTop': '40px', 'paddingTop': '32px',
-            'borderTop': '0.5px solid #f0f0f0', 'marginBottom': '24px',
-        }),
 
-        html.Div(id='sector-geo-section'),
+            html.Div(id='earnings-section', style={
+                'marginTop': '32px', 'paddingTop': '28px',
+                'borderTop': '0.5px solid #f0f0f0',
+            }),
 
-        html.Div(id='earnings-section', style={
-            'marginTop': '32px', 'paddingTop': '28px',
-            'borderTop': '0.5px solid #f0f0f0',
-        }),
+            html.Div(id='dividend-section', style={
+                'marginTop': '32px', 'paddingTop': '28px',
+                'borderTop': '0.5px solid #f0f0f0',
+            }),
 
-        html.Div(id='dividend-section', style={
-            'marginTop': '32px', 'paddingTop': '28px',
-            'borderTop': '0.5px solid #f0f0f0',
-        }),
+            html.Div(id='market-valuation-section', style={
+                'marginTop': '32px', 'paddingTop': '28px',
+                'borderTop': '0.5px solid #f0f0f0',
+            }),
 
-        html.Div(id='market-valuation-section', style={
-            'marginTop': '32px', 'paddingTop': '28px',
-            'borderTop': '0.5px solid #f0f0f0',
-        }),
+        ], id='main-content-area'),
 
         # Toast
         html.Div(id='toast', style={
@@ -161,8 +156,9 @@ def build_layout(refresh_ms: int) -> html.Div:
                     style={'display': 'none', 'position': 'absolute'}),
 
         dcc.Download(id='download-pdf'),
-        dcc.Interval(id='startup-interval', interval=2000, n_intervals=0, max_intervals=1),
-        dcc.Interval(id='refresh-interval', interval=refresh_ms, n_intervals=0),
+        dcc.Interval(id='startup-interval',      interval=2000,  n_intervals=0, max_intervals=1),
+        dcc.Interval(id='refresh-interval',       interval=refresh_ms, n_intervals=0),
+        dcc.Interval(id='fast-connect-poll',      interval=4000,  n_intervals=0),
         dcc.Store(id='portfolio-data'),
         dcc.Store(id='market-intel-data'),
         dcc.Store(id='valuation-data'),
@@ -182,6 +178,7 @@ def build_layout(refresh_ms: int) -> html.Div:
         dcc.Store(id='coach-copy-signal', data=0),
         dcc.Store(id='coach-scroll-signal', data=0),
         dcc.Store(id='position-detail-scroll-signal', data=0),
+        dcc.Store(id='fund-view-mode', data='grid'),
         dcc.Store(id='coach-panel-scroll-signal', data=0),
 
     ], id='app-root', style={

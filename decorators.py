@@ -29,14 +29,13 @@ class NotReadyError(Exception):
     """Raised by a render callback when its input store isn't ready yet."""
 
 
-def _loading(msg: str) -> html.Div:
-    return html.Div(
-        html.P(msg, style={
-            'fontSize': '15px', 'color': COLOR_TEXT_GHOST,
-            'textAlign': 'center', 'padding': '32px 0', 'margin': '0',
-        }),
-        style=CARD,
-    )
+def _loading(_msg: str) -> html.Div:
+    return html.Div([
+        html.Div(className='skeleton-block', style={'height': '18px', 'width': '40%', 'marginBottom': '16px'}),
+        html.Div(className='skeleton-block', style={'height': '80px', 'marginBottom': '10px'}),
+        html.Div(className='skeleton-block', style={'height': '80px', 'marginBottom': '10px'}),
+        html.Div(className='skeleton-block', style={'height': '80px'}),
+    ], style={**CARD, 'padding': '20px'})
 
 
 def _error(label: str, err: Exception) -> html.Div:

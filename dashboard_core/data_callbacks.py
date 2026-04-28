@@ -20,10 +20,11 @@ from config import cfg
 from dashboard_core.helpers import badge, status_banner
 from data_processor import get_summary, process_positions
 from ibkr_client import (
+    connection_attempt,
     connection_status,
     fetch_all_data,
     is_demo_mode,
-    request_retry,
+    ensure_connection_started,
     set_demo_mode,
 )
 from styles import (
@@ -96,12 +97,38 @@ def register(app):
         Input('app-root', 'id'),
     )
 
+    # ── Fast poll: update attempt counter every 4 s while connecting ─────────
+    # Kept separate from fetch_data so the main data-fetch path is untouched.
+    # fetch_all_data() returns None immediately when not connected, so this
+    # callback is cheap.  The attempt count is encoded in the status string
+    # ('connecting:N') so each increment changes the store value and forces
+    # update_status to re-fire even though the base status hasn't changed.
+    @app.callback(
+        Output('connection-status', 'data', allow_duplicate=True),
+        Input('fast-connect-poll', 'n_intervals'),
+        State('connection-status', 'data'),
+        prevent_initial_call=True,
+    )
+    def poll_connect_attempt(_, current_status):
+        base = (current_status or '').split(':')[0]
+        if base not in ('connecting', 'loading'):
+            return no_update
+        real = connection_status()
+        if real != 'connected' and not _EVER_CONNECTED \
+                and (time.time() - _APP_START) < _STARTUP_GRACE_S:
+            return f'connecting:{connection_attempt()}'
+        # Grace period just expired — push the real status immediately so the
+        # banner switches within 4 s instead of waiting for the 60 s tick.
+        if base in ('connecting', 'loading') and not _EVER_CONNECTED:
+            return real
+        return no_update
+
     # ── Data fetch ────────────────────────────────────────────────────────────
     @app.callback(
         Output('portfolio-data', 'data'),
         Output('connection-status', 'data'),
         Input('refresh-interval', 'n_intervals'),
-        Input('startup-interval', 'n_intervals'),  # fires once at 5 s to catch post-restart timing
+        Input('startup-interval', 'n_intervals'),  # fires once at 2 s to catch post-restart timing
         Input('kb-refresh-btn', 'n_clicks'),       # triggered when user presses R
     )
     def fetch_data(*_):
@@ -114,7 +141,7 @@ def register(app):
             real = connection_status()
             if real != 'connected' and not _EVER_CONNECTED \
                     and (time.time() - _APP_START) < _STARTUP_GRACE_S:
-                return {}, 'connecting'
+                return {}, f'connecting:{connection_attempt()}'
             return {}, real
         _EVER_CONNECTED = True
         df = process_positions(raw['positions'], raw.get('market_data', {}))
@@ -139,6 +166,7 @@ def register(app):
         Output('status-banner', 'children'),
         Output('connection-badge', 'children'),
         Output('last-updated', 'children'),
+        Output('portfolio-title', 'children'),
         Output('retry-connection-wrap', 'style'),
         Output('exit-demo-wrap', 'style'),
         Input('connection-status', 'data'),
@@ -152,27 +180,49 @@ def register(app):
         exit_demo_shown  = {'display': 'block'}
         demo = is_demo_mode()
 
-        if status in ('loading', 'connecting'):
+        # status may be 'loading', 'connecting', or 'connecting:N' (N = attempt count)
+        base_status = status.split(':')[0] if status else ''
+        raw_attempt  = int(status.split(':')[1]) if status and ':' in status else None
+
+        if base_status in ('loading', 'connecting'):
             spinner = html.Div(className='ibkr-spinner', style={
                 'width': '36px', 'height': '36px', 'margin': '0 auto 24px',
                 'border': '3px solid #e5e7eb', 'borderTop': f'3px solid {COLOR_GOOD}',
                 'borderRadius': '50%',
             })
-            title = "Starting dashboard…" if status == 'loading' else "Connecting to IBKR…"
-            body  = ("Loading your portfolio. This takes a few seconds."
-                     if status == 'loading'
-                     else "Reaching IB Gateway / TWS. Trying all common ports — takes up to 20 seconds.")
+            dots = html.Span([
+                html.Span(".", className='conn-dot', style={'animationDelay': '0s'}),
+                html.Span(".", className='conn-dot', style={'animationDelay': '0.3s'}),
+                html.Span(".", className='conn-dot', style={'animationDelay': '0.6s'}),
+            ])
+            if base_status == 'loading':
+                title_content = "Starting dashboard…"
+                body = "Loading your portfolio. This takes a few seconds."
+                attempt_line = None
+            else:
+                title_content = "Connecting to IBKR"
+                body = "Reaching IB Gateway / TWS. Trying all common ports — takes up to 30 seconds."
+                if raw_attempt is not None:
+                    attempt_line = html.P(
+                        [f"Attempt {raw_attempt + 1} ", dots],
+                        style={'fontSize': '13px', 'color': COLOR_TEXT_MUTED,
+                               'margin': '8px 0 0', 'fontWeight': '600',
+                               'letterSpacing': '0.03em'},
+                    )
+                else:
+                    attempt_line = None
             banner = html.Div([
                 spinner,
-                html.P(title, style={'fontSize': '18px', 'fontWeight': '600',
+                html.P(title_content, style={'fontSize': '18px', 'fontWeight': '600',
                                      'color': COLOR_TEXT_STRONG, 'margin': '0',
                                      'letterSpacing': '-0.3px'}),
                 html.P(body, style={'fontSize': '14px', 'color': COLOR_TEXT_MUTED,
                                     'margin': '6px 0 0', 'lineHeight': '1.5'}),
+                *([attempt_line] if attempt_line else []),
             ], style={'textAlign': 'center', 'padding': '52px 40px',
                       'background': COLOR_SURFACE_SOFT, 'borderRadius': '14px',
                       'border': f'0.5px solid {COLOR_BORDER}'})
-            return banner, badge("Connecting...", COLOR_TEXT_MUTED, COLOR_SURFACE, COLOR_BORDER_STRONG), "", retry_hidden, exit_demo_hidden
+            return banner, badge("Connecting...", COLOR_TEXT_MUTED, COLOR_SURFACE, COLOR_BORDER_STRONG), "", "Portfolio", retry_hidden, exit_demo_hidden
 
         if status == 'disconnected':
             return status_banner("🔌", "Not connected to IBKR",
@@ -180,18 +230,27 @@ def register(app):
                                  "IB Gateway: Configure → Settings → API → Settings → Enable ActiveX and Socket Clients (Port 4002 paper / 4001 live).\n"
                                  "TWS: Edit → Global Configuration → API → Settings → Enable ActiveX and Socket Clients (Port 7497 paper / 7496 live).",
                                  COLOR_BAD_BG), \
-                   badge("● Disconnected", COLOR_BAD, COLOR_BAD_BG, '#fecaca'), ts, retry_shown, exit_demo_hidden
+                   badge("● Disconnected", COLOR_BAD, COLOR_BAD_BG, '#fecaca'), ts, "Portfolio", retry_shown, exit_demo_hidden
 
         if status == 'no_positions':
             conn_badge = (badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER) if demo
                           else badge("● Connected", COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD_MEDIUM))
             return status_banner("📭", "No positions found",
                                  "Connected to IBKR successfully, but your account has no open positions.", COLOR_SURFACE_SOFT), \
-                   conn_badge, ts, retry_hidden, (exit_demo_shown if demo else exit_demo_hidden)
+                   conn_badge, ts, "Sample portfolio" if demo else "Portfolio", retry_hidden, (exit_demo_shown if demo else exit_demo_hidden)
 
         if demo:
-            return None, badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER), ts, retry_hidden, exit_demo_shown
-        return None, badge(f"● Live · {_REFRESH_MS // 1000}s", COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD_MEDIUM), ts, retry_hidden, exit_demo_hidden
+            return None, badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER), "", "Sample portfolio", retry_hidden, exit_demo_shown
+        return None, badge(f"● Live · {_REFRESH_MS // 1000}s", COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD_MEDIUM), ts, "Portfolio", retry_hidden, exit_demo_hidden
+
+    @app.callback(
+        Output('main-content-area', 'style'),
+        Input('connection-status', 'data'),
+    )
+    def toggle_main_content(status):
+        if (status or '').split(':')[0] == 'disconnected':
+            return {'display': 'none'}
+        return {}
 
     @app.callback(
         Output('connection-status', 'data', allow_duplicate=True),
@@ -201,8 +260,8 @@ def register(app):
     def retry_connection(n_clicks):
         if not n_clicks:
             return no_update
-        request_retry()
-        return 'connecting'
+        ensure_connection_started()  # starts thread if demo just exited, else request_retry
+        return 'connecting:0'
 
     # ── Demo mode toggle ──────────────────────────────────────────────────────
     # The two buttons write to kb-refresh-btn.n_clicks to piggyback on

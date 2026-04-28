@@ -7,6 +7,18 @@
   scroll-margin-top: 220px;
 }
 
+/* Connecting banner — animated dots */
+@keyframes connDotBlink {
+  0%, 20% { opacity: 0; }
+  50%      { opacity: 1; }
+  100%     { opacity: 0; }
+}
+.conn-dot {
+  animation: connDotBlink 1.5s ease-in-out infinite;
+  opacity: 0;
+  font-weight: 700;
+}
+
 /* Toast fade-out animation
    The toast div gets this class.
    It is visible for ~3 s, then fades + slides down over 0.4 s.
@@ -92,6 +104,19 @@
   background-size: 1200px 100%;
   animation: skeletonShimmer 1.6s ease-in-out infinite;
   border-radius: 5px;
+}
+
+/* Section content fade-in — fires whenever Dash inserts new children.
+   Applied to all four data sections so they reveal together. */
+@keyframes sectionFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+#sector-geo-section > *,
+#earnings-section > *,
+#dividend-section > *,
+#market-valuation-section > * {
+  animation: sectionFadeIn 0.45s ease-out;
 }
 
 /* Coach chat: thinking indicator dots + chip hover */

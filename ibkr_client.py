@@ -360,32 +360,38 @@ class _IBKRConnection:
                 log.warning("Market data fetch failed: %s", e)
                 return []
 
-        # Chain B: dividend tick subscriptions (type 59)
-        # sleep reduced 3 s → 1.5 s; runs in parallel so adds zero extra latency
+        # Chain B: dividend (59) + 52-week range (165) tick subscriptions.
+        # Returns (div_dict, range_dict) so the caller can merge range into market_data.
         async def _fetch_dividends():
             try:
                 div_tickers = [
-                    ib.reqMktData(c, genericTickList='59', snapshot=False)
+                    ib.reqMktData(c, genericTickList='59,165', snapshot=False)
                     for c in contracts
                 ]
                 await asyncio.sleep(1.5)
-                result = {}
+                div_result   = {}
+                range_result = {}
                 for t in div_tickers:
                     sym = t.contract.symbol
                     d   = t.dividends
                     if d and (d.next12Months or d.past12Months):
-                        result[sym] = {
+                        div_result[sym] = {
                             'past_12m':    safe(d.past12Months),
                             'next_12m':    safe(d.next12Months),
                             'next_date':   d.nextDate.isoformat() if d.nextDate else None,
                             'next_amount': safe(d.nextAmount),
                         }
+                    low  = safe(t.low52week)
+                    high = safe(t.high52week)
+                    if low and high:
+                        range_result[sym] = {'low_52w': low, 'high_52w': high}
                     ib.cancelMktData(t.contract)
-                log.debug("Dividend data fetched for: %s", list(result.keys()))
-                return result
+                log.debug("Dividend data fetched for: %s", list(div_result.keys()))
+                log.debug("52w range fetched for: %s", list(range_result.keys()))
+                return div_result, range_result
             except Exception as e:
                 log.warning("Dividend data fetch failed: %s", e)
-                return {}
+                return {}, {}
 
         # Chain C: EUR/USD live rate
         async def _fetch_fx():
@@ -444,7 +450,7 @@ class _IBKRConnection:
                 log.warning("Daily P&L fetch failed: %s", e)
                 return 0.0
 
-        raw_tickers, div_data, fx_rate, daily_pnl, trades = await asyncio.gather(
+        raw_tickers, (div_data, range_data), fx_rate, daily_pnl, trades = await asyncio.gather(
             _fetch_tickers(),
             _fetch_dividends(),
             _fetch_fx(),
@@ -470,6 +476,16 @@ class _IBKRConnection:
                     'vwap':       safe(t.vwap),
                 }
 
+        # Merge 52-week range from the generic-tick subscription (tick 165).
+        # reqTickersAsync snapshots often don't carry low52week/high52week;
+        # the dedicated reqMktData subscription above is the reliable source.
+        for sym, rng in (range_data or {}).items():
+            if sym in market_data:
+                if not market_data[sym].get('low_52w'):
+                    market_data[sym]['low_52w'] = rng['low_52w']
+                if not market_data[sym].get('high_52w'):
+                    market_data[sym]['high_52w'] = rng['high_52w']
+
         if fx_rate is not None:
             account['eurusd_rate'] = fx_rate
         account['daily_pnl'] = daily_pnl if isinstance(daily_pnl, (int, float)) else 0.0
@@ -492,6 +508,7 @@ _conn = _IBKRConnection()
 # mock payload instead of talking to TWS. Toggled at startup via DEMO_MODE env
 # var or at runtime from the dashboard UI.
 _demo_mode = False
+_conn_params: dict | None = None   # saved at startup; used by ensure_connection_started()
 
 
 def set_demo_mode(on: bool) -> None:
@@ -503,21 +520,47 @@ def is_demo_mode() -> bool:
     return _demo_mode
 
 
-def start_connection(host='127.0.0.1', port=4002, client_id=1,
-                     readonly=True, reconnect_delay=_BASE_BACKOFF,
-                     heartbeat_interval=30):
-    """Call once at startup to launch the background IB thread.
-
-    In demo mode this is a no-op — no socket, no thread, no log spam.
+def save_connection_params(host='127.0.0.1', port=4002, client_id=1,
+                           readonly=True, reconnect_delay=_BASE_BACKOFF,
+                           heartbeat_interval=30):
+    """Store connection parameters without starting the thread.
+    Called at startup in demo mode so that ensure_connection_started() can
+    bring the thread up later when the user exits demo and clicks Retry.
     """
-    if _demo_mode:
-        log.info("Demo mode active — skipping IBKR connection thread")
-        return
-    _conn.start(
+    global _conn_params
+    _conn_params = dict(
         host=host, port=port, client_id=client_id,
         readonly=readonly, reconnect_delay=reconnect_delay,
         heartbeat_interval=heartbeat_interval,
     )
+
+
+def start_connection(host='127.0.0.1', port=4002, client_id=1,
+                     readonly=True, reconnect_delay=_BASE_BACKOFF,
+                     heartbeat_interval=30):
+    """Save params and immediately launch the background IB thread."""
+    save_connection_params(
+        host=host, port=port, client_id=client_id,
+        readonly=readonly, reconnect_delay=reconnect_delay,
+        heartbeat_interval=heartbeat_interval,
+    )
+    _conn.start(**_conn_params)
+
+
+def ensure_connection_started():
+    """Start the IB thread if it has never been started; wake retry if already running.
+
+    Called when the user clicks Retry after exiting demo mode — the thread may
+    not exist yet (demo path never started it), so we can't just request_retry().
+    """
+    if _conn._loop is not None:
+        # Thread is already running — just poke the reconnect loop.
+        _conn.request_retry()
+    elif _conn_params is not None:
+        log.info("Starting IBKR connection thread on first retry after demo exit")
+        _conn.start(**_conn_params)
+    else:
+        log.warning("ensure_connection_started: no connection params saved")
 
 
 def fetch_all_data() -> dict | None:
@@ -531,6 +574,13 @@ def connection_status() -> str:
     if _demo_mode:
         return 'connected'
     return _conn.status
+
+
+def connection_attempt() -> int:
+    """Return the current consecutive reconnect-attempt count (0 = first try)."""
+    if _demo_mode:
+        return 0
+    return _conn._conn_attempt
 
 
 def request_retry():

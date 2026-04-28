@@ -21,7 +21,7 @@ import threading
 
 from config import cfg
 from dashboard import app
-from ibkr_client import set_demo_mode, start_connection
+from ibkr_client import save_connection_params, set_demo_mode, start_connection
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 # Set LOG_FORMAT=json in the environment (or in Docker) to emit newline-
@@ -71,11 +71,21 @@ def _open_browser():
 
 
 if __name__ == '__main__':
-    if cfg.get('app', {}).get('demo_mode'):
-        log.info("Demo mode — no IBKR connection")
+    import sys
+    demo = '--demo' in sys.argv or cfg.get('app', {}).get('demo_mode')
+    ibkr = cfg['ibkr']
+    if demo:
+        log.info("Demo mode — saving connection params; thread starts on first Retry")
         set_demo_mode(True)
+        save_connection_params(
+            host=ibkr['host'],
+            port=ibkr['port'],
+            client_id=ibkr['client_id'],
+            readonly=ibkr['readonly'],
+            reconnect_delay=ibkr['reconnect_delay_seconds'],
+            heartbeat_interval=ibkr.get('heartbeat_interval', 30),
+        )
     else:
-        ibkr = cfg['ibkr']
         log.info("Starting IBKR connection thread → %s:%d", ibkr['host'], ibkr['port'])
         start_connection(
             host=ibkr['host'],
@@ -85,6 +95,25 @@ if __name__ == '__main__':
             reconnect_delay=ibkr['reconnect_delay_seconds'],
             heartbeat_interval=ibkr.get('heartbeat_interval', 30),
         )
+
+    # Pre-warm the valuation cache so the Market Valuation section is ready
+    # when the user first opens the dashboard. On warm cache this is instant;
+    # on cold cache the ~15-30s HTTP fetches run in the background while the
+    # user sees the connecting/loading screen instead of a 30-second shimmer.
+    def _prewarm_valuation():
+        try:
+            from market_valuation import (get_buffett_indicator, get_shiller_cape,
+                                          get_sp500_pe, get_treasury_yield)
+            from net_util import run_parallel
+            run_parallel({
+                'buffett':  get_buffett_indicator,
+                'sp500_pe': get_sp500_pe,
+                'cape':     get_shiller_cape,
+                'treasury': get_treasury_yield,
+            })
+        except Exception:
+            pass
+    threading.Thread(target=_prewarm_valuation, daemon=True, name='valuation-prewarm').start()
 
     # Skip browser auto-open in Docker / headless environments
     open_browser = os.environ.get('OPEN_BROWSER', '1').lower() not in ('0', 'false', 'no')

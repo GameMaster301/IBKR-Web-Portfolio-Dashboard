@@ -11,7 +11,7 @@ Two callbacks:
 from __future__ import annotations
 
 import plotly.graph_objects as go
-from dash import Input, Output, dcc, html
+from dash import Input, Output, State, dcc, html
 
 from dashboard_core.helpers import section_label
 from decorators import NotReadyError, safe_render
@@ -34,7 +34,6 @@ from styles import (
     COLOR_GOOD_SOFT,
     COLOR_SURFACE,
     COLOR_SURFACE_WHITE,
-    COLOR_TEXT,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
     COLOR_TEXT_GHOST,
@@ -51,8 +50,10 @@ def register(app):
     @app.callback(
         Output('valuation-data', 'data'),
         Input('refresh-interval', 'n_intervals'),
+        Input('startup-interval', 'n_intervals'),
+        Input('kb-refresh-btn', 'n_clicks'),
     )
-    def populate_valuation_data(_):
+    def populate_valuation_data(*_):
         """
         Fetch all four valuation metrics in parallel and store them.
         Each getter has its own 4-hour cache, so real network calls are rare.
@@ -70,9 +71,13 @@ def register(app):
     @app.callback(
         Output('market-valuation-section', 'children'),
         Input('valuation-data', 'data'),
+        State('connection-status', 'data'),
     )
     @safe_render('Market Valuation')
-    def render_market_valuation(data):
+    def render_market_valuation(data, status):
+        base = (status or '').split(':')[0]
+        if base in ('disconnected', 'no_positions'):
+            return []
         return _render_market_valuation_inner(data)
 
 
@@ -162,7 +167,7 @@ def _render_market_valuation_inner(data):
     treasury_d = data.get('treasury')
 
     # ── Card builder ──────────────────────────────────────────────────────────
-    def metric_card(title, subtitle, body, footer=None):
+    def metric_card(title, subtitle, body, explainer=None):
         return html.Div([
             html.P(title, style={
                 'fontSize': '13px', 'color': COLOR_TEXT_MID, 'margin': '0 0 2px',
@@ -172,15 +177,21 @@ def _render_market_valuation_inner(data):
                 'fontSize': '13px', 'color': COLOR_TEXT_MUTED, 'margin': '0 0 16px',
             }),
             body,
-            html.P(footer, style={
-                'fontSize': '13px', 'color': COLOR_TEXT_SEMI, 'margin': '14px 0 0',
-                'lineHeight': '1.5',
-            }) if footer else None,
+            html.Details([
+                html.Summary('What does this mean?', style={
+                    'fontSize': '12px', 'color': COLOR_TEXT_MID,
+                    'cursor': 'pointer', 'marginTop': '14px', 'userSelect': 'none',
+                }),
+                html.P(explainer, style={
+                    'fontSize': '12px', 'color': COLOR_TEXT_SEMI,
+                    'margin': '6px 0 0', 'lineHeight': '1.6',
+                }),
+            ]) if explainer else None,
         ], style={**CARD, 'flex': '1'})
 
     def zone_badge(label, color):
-        bg      = color + '18'   # 10% opacity hex
-        border  = color + '55'   # 33% opacity hex
+        bg      = color + '18'
+        border  = color + '55'
         return html.Span(label, style={
             'fontSize': '14px', 'fontWeight': '600', 'color': color,
             'background': bg, 'border': f'0.5px solid {border}',
@@ -196,12 +207,8 @@ def _render_market_valuation_inner(data):
 
     # ── 1. Buffett Indicator ──────────────────────────────────────────────────
     if buffett_d:
-        bv     = buffett_d['value']
+        bv             = buffett_d['value']
         blabel, bcolor = buffett_zone(bv)
-        # How far above the modern ~127% trend line we are
-        modern_trend    = 127
-        above_trend_pct = round(bv - modern_trend, 0)
-
         b_body = html.Div([
             big_value(f'{bv:.1f}%', bcolor),
             zone_badge(blabel, bcolor),
@@ -219,26 +226,18 @@ def _render_market_valuation_inner(data):
                 html.Span(f"GDP  ${buffett_d['gdp_t']:.1f}T",
                           style={'fontSize': '13px', 'color': COLOR_TEXT_FAINT}),
             ], style={'marginTop': '8px'}),
-            html.Div([
-                html.Span(
-                    f'The market is {bv/100:.1f}× the size of the US economy'
-                    f' — {above_trend_pct:.0f}% above the modern trend line.',
-                    style={'fontSize': '12px', 'color': COLOR_TEXT_MID, 'fontStyle': 'italic'},
-                ),
-                html.Br(),
-                html.Span(
-                    f'GDP as of {buffett_d["gdp_quarter"]} ({buffett_d["gdp_source"]})'
-                    ' — 1–2 quarter lag is normal.',
-                    style={'fontSize': '11px', 'color': COLOR_TEXT_GHOST},
-                ),
-            ], style={'marginTop': '6px'}),
         ])
-        b_foot = (
-            'Buffett: “The best single measure of where valuations stand at any given moment.” '
+        b_explainer = (
+            f'Compares the total value of all US stocks to GDP. '
+            f'Above 100% means the market is worth more than the entire US economy produces in a year. '
+            f'The modern average since 2000 is ~127%. '
+            f'GDP data as of {buffett_d["gdp_quarter"]} ({buffett_d["gdp_source"]}) '
+            f'— a 1–2 quarter lag is normal. '
+            f'Warren Buffett called it \'the best single measure of where valuations stand at any given moment.\''
         )
     else:
-        b_body = _val_unavailable()
-        b_foot = None
+        b_body      = _val_unavailable()
+        b_explainer = None
 
     # ── 2. S&P 500 P/E ratio ─────────────────────────────────────────────────
     if pe_d:
@@ -270,18 +269,19 @@ def _render_market_valuation_inner(data):
         else:
             pe_body = _val_unavailable()
 
-        pe_foot = (
-            'Compares the S&P 500 price to its aggregate earnings. '
-            'Long-run average: ~16×. Above 25× historically correlates '
-            'with below-average 10-year forward returns.'
+        pe_explainer = (
+            'For every $1 of annual profit the S&P 500 earns, you pay this many dollars to own a share of it. '
+            'The long-run average is ~16×. '
+            'Above 25× has historically meant below-average returns over the following 10 years — '
+            'not a crash guarantee, but lower expectations are reasonable.'
         )
     else:
-        pe_body = _val_unavailable()
-        pe_foot = None
+        pe_body      = _val_unavailable()
+        pe_explainer = None
 
     # ── 3. Shiller CAPE ───────────────────────────────────────────────────────
     if cape_d:
-        cv     = cape_d['value']
+        cv             = cape_d['value']
         clabel, ccolor = cape_zone(cv)
         cape_body = html.Div([
             big_value(f'{cv:.1f}×', ccolor),
@@ -303,95 +303,76 @@ def _render_market_valuation_inner(data):
                           style={'fontSize': '13px', 'color': COLOR_TEXT_MUTED}),
             ], style={'marginTop': '8px'}),
         ])
-        cape_foot = (
-            'Uses 10 years of inflation-adjusted earnings to smooth short-term noise. '
+        cape_explainer = (
+            f'Like the regular P/E but averages 10 years of earnings (adjusted for inflation) '
+            f'to filter out one-off profit spikes and crashes. '
             f'100-year average: ~{cape_d["hist_mean"]:.0f}×. '
-            'The modern (20-year) average is ~25×, reflecting higher structural '
-            'valuations since the tech era. The chart marks major crashes to show that '
-            'elevated readings did eventually matter — just not on a fixed timeline.'
+            f'The modern (20-year) average is ~25×, reflecting structurally higher valuations since the tech era. '
+            f'Elevated readings have always preceded below-average long-run returns — '
+            f'just not on a predictable timeline.'
         )
     else:
-        cape_body = _val_unavailable()
-        cape_foot = None
+        cape_body      = _val_unavailable()
+        cape_explainer = None
 
-    cards = html.Div([
-        metric_card('Buffett Indicator',
-                    'Stock market size vs the economy',
-                    b_body, b_foot),
-        metric_card('S&P 500 P/E Ratio',
-                    'How much you pay per $1 of profit',
-                    pe_body, pe_foot),
-        metric_card('Shiller CAPE',
-                    'P/E smoothed over 10 years (more reliable)',
-                    cape_body, cape_foot),
-    ], style={'display': 'flex', 'gap': '14px', 'alignItems': 'stretch'})
-
-    # ── Yield Gap ─────────────────────────────────────────────────────────────
-    # Ties the P/E and Treasury yield together into a single verdict:
-    #   Earnings Yield (= 1/PE) tells you what stocks "pay" per dollar invested.
-    #   Yield Gap = Earnings Yield - 10yr Bond Yield.
-    #   Positive → stocks still offer more than "safe" bonds.
-    #   Negative → bonds pay more than stocks earn → valuations hard to justify.
+    # ── 4. Yield Gap ─────────────────────────────────────────────────────────
     trailing_pe = pe_d.get('trailing_pe') if pe_d else None
     tv          = treasury_d['value']     if treasury_d else None
 
     if trailing_pe and tv:
         earnings_yield = round(100 / trailing_pe, 2)
         gap            = round(earnings_yield - tv, 2)
+        gap_sign       = '+' if gap >= 0 else ''
 
-        if   gap >  2:   gap_label, gap_color = 'Stocks strongly favoured',  COLOR_GOOD
-        elif gap >  0:   gap_label, gap_color = 'Stocks slightly favoured',   COLOR_GOOD_SOFT
-        elif gap > -1:   gap_label, gap_color = 'Roughly equal',              COLOR_WARN_YELLOW
-        elif gap > -2:   gap_label, gap_color = 'Bonds competitive',          COLOR_WARN_SOFT
-        else:            gap_label, gap_color = 'Bonds clearly favoured',     COLOR_BAD
+        if   gap >  2:   gap_label, gap_color = 'Stocks strongly favoured', COLOR_GOOD
+        elif gap >  0:   gap_label, gap_color = 'Stocks slightly favoured',  COLOR_GOOD_SOFT
+        elif gap > -1:   gap_label, gap_color = 'Roughly equal',             COLOR_WARN_YELLOW
+        elif gap > -2:   gap_label, gap_color = 'Bonds competitive',         COLOR_WARN_SOFT
+        else:            gap_label, gap_color = 'Bonds clearly favoured',    COLOR_BAD
 
-        gap_sign = '+' if gap >= 0 else ''
-
-        context_note = html.Div([
+        yg_body = html.Div([
+            big_value(f'{gap_sign}{gap:.2f}%', gap_color),
+            zone_badge(gap_label, gap_color),
+            _val_zone_bar(gap + 5, [
+                ('Bonds Favoured',    3,  COLOR_BAD),
+                ('Bonds Compet.',     4,  COLOR_WARN_SOFT),
+                ('Roughly Equal',     5,  COLOR_WARN_YELLOW),
+                ('Stocks Favoured',   7,  COLOR_GOOD_SOFT),
+                ('Stocks Strongly',  10,  COLOR_GOOD),
+            ], display_max=10),
             html.Div([
-                # Left: formula breakdown
-                html.Div([
-                    html.Span('Yield Gap', style={
-                        'fontWeight': '700', 'fontSize': '13px', 'color': COLOR_TEXT,
-                        'display': 'block', 'marginBottom': '4px',
-                    }),
-                    html.Span(
-                        f'S&P earnings yield ({earnings_yield:.2f}%) '
-                        f'− 10-yr bond yield ({tv:.2f}%)',
-                        style={'fontSize': '14px', 'color': COLOR_TEXT_MID},
-                    ),
-                ]),
-                # Right: result
-                html.Div([
-                    html.Span(f'{gap_sign}{gap:.2f}%', style={
-                        'fontSize': '22px', 'fontWeight': '700',
-                        'color': gap_color, 'marginRight': '10px',
-                    }),
-                    html.Span(gap_label, style={
-                        'fontSize': '13px', 'fontWeight': '600',
-                        'color': gap_color,
-                        'background': gap_color + '18',
-                        'padding': '3px 10px', 'borderRadius': '99px',
-                    }),
-                ], style={'display': 'flex', 'alignItems': 'center'}),
-            ], style={
-                'display': 'flex', 'justifyContent': 'space-between',
-                'alignItems': 'center',
-            }),
-            html.Div(
-                'When this number is positive, stocks are earning more per dollar than '
-                'government bonds — a sign investors are still being rewarded for '
-                'the extra risk. When it turns negative, bonds pay more than stocks earn, '
-                'which makes expensive valuations harder to justify.',
-                style={'fontSize': '14px', 'color': COLOR_TEXT_MID,
-                       'marginTop': '8px', 'lineHeight': '1.5'},
-            ),
-        ], style={
-            'background': '#f8f9fa', 'borderLeft': f'3px solid {gap_color}',
-            'padding': '12px 16px', 'borderRadius': '4px', 'marginTop': '18px',
-        })
+                html.Span(f'Earnings yield: {earnings_yield:.2f}%',
+                          style={'fontSize': '13px', 'color': COLOR_TEXT_DIM}),
+                html.Span('  ·  ', style={'color': COLOR_TEXT_GHOST, 'fontSize': '13px'}),
+                html.Span(f'Bond yield: {tv:.2f}%',
+                          style={'fontSize': '13px', 'color': COLOR_TEXT_DIM}),
+            ], style={'marginTop': '8px'}),
+        ])
+        yg_explainer = (
+            'Compares what stocks "earn" for you (S&P earnings yield = 1 ÷ P/E) '
+            'against what a risk-free government bond pays. '
+            'When positive, stocks still reward you more for the extra risk. '
+            'When negative, you can earn more in bonds without owning volatile stocks — '
+            'which makes high stock valuations harder to justify.'
+        )
     else:
-        context_note = None
+        yg_body      = _val_unavailable()
+        yg_explainer = None
+
+    cards = html.Div([
+        metric_card('Buffett Indicator',
+                    'Stock market size vs the economy',
+                    b_body, b_explainer),
+        metric_card('S&P 500 P/E Ratio',
+                    'How much you pay per $1 of profit',
+                    pe_body, pe_explainer),
+        metric_card('Shiller CAPE',
+                    'P/E smoothed over 10 years (more reliable)',
+                    cape_body, cape_explainer),
+        metric_card('Yield Gap',
+                    'Stocks vs bonds: which pays more?',
+                    yg_body, yg_explainer),
+    ], style={'display': 'flex', 'gap': '14px', 'alignItems': 'stretch'})
 
     # ── CAPE historical chart ─────────────────────────────────────────────────
     if cape_d and cape_d.get('dates'):
@@ -509,8 +490,7 @@ def _render_market_valuation_inner(data):
         cape_chart = None
 
     return html.Div([
-        section_label("Market Valuation"),
+        section_label("Market Valuation – US"),
         cards,
-        context_note,
         cape_chart,
     ], style=CARD)
