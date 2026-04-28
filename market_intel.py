@@ -484,9 +484,9 @@ def _fetch_fundamentals_one(sym: str) -> dict:
             delta  = closes.diff()
             gain   = delta.clip(lower=0).rolling(14).mean()
             loss   = (-delta.clip(upper=0)).rolling(14).mean()
-            g, l   = float(gain.iloc[-1]), float(loss.iloc[-1])
-            if l and l == l:
-                rsi = round(100 - 100 / (1 + g / l), 1)
+            g, loss_avg = float(gain.iloc[-1]), float(loss.iloc[-1])
+            if loss_avg and loss_avg == loss_avg:
+                rsi = round(100 - 100 / (1 + g / loss_avg), 1)
 
         if len(hist) >= 2:
             current = float(hist['Close'].iloc[-1])

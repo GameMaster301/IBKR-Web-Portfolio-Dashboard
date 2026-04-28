@@ -25,7 +25,6 @@ from dashboard_core.helpers import EURUSD_FALLBACK, section_label, to_eur
 from decorators import NotReadyError, safe_render
 from market_intel import get_earnings_data, get_sector_geo
 from net_util import run_parallel
-from schemas import MarketIntelData, PortfolioData
 from styles import (
     CARD,
     COLOR_BAD,

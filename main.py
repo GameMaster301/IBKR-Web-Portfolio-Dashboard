@@ -102,8 +102,12 @@ if __name__ == '__main__':
     # user sees the connecting/loading screen instead of a 30-second shimmer.
     def _prewarm_valuation():
         try:
-            from market_valuation import (get_buffett_indicator, get_shiller_cape,
-                                          get_sp500_pe, get_treasury_yield)
+            from market_valuation import (
+                get_buffett_indicator,
+                get_shiller_cape,
+                get_sp500_pe,
+                get_treasury_yield,
+            )
             from net_util import run_parallel
             run_parallel({
                 'buffett':  get_buffett_indicator,

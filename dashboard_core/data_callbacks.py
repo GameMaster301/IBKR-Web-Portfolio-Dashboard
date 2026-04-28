@@ -22,9 +22,9 @@ from data_processor import get_summary, process_positions
 from ibkr_client import (
     connection_attempt,
     connection_status,
+    ensure_connection_started,
     fetch_all_data,
     is_demo_mode,
-    ensure_connection_started,
     set_demo_mode,
 )
 from styles import (
