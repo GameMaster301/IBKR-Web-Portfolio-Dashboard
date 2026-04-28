@@ -4,13 +4,14 @@ All fixtures are built from demo_data.py so tests run with no network,
 no IBKR connection, and no Dash server.
 """
 
-import sys
 import os
+import sys
 
 # Ensure the project root is on sys.path regardless of how pytest is invoked.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import pytest
+
 from demo_data import build_demo_payload
 
 

@@ -11,8 +11,9 @@ _START = time.time()
 
 
 def register(flask_app) -> None:
-    import ibkr_client
     from flask import jsonify
+
+    import ibkr_client
 
     @flask_app.route('/health')
     def health():

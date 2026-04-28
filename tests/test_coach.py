@@ -2,6 +2,7 @@
 
 import pytest
 from dash import html
+
 from coach import SCENARIOS, render_scenario
 
 

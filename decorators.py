@@ -20,7 +20,7 @@ from functools import wraps
 
 from dash import html
 
-from styles import CARD, COLOR_TEXT_GHOST, COLOR_WARN, COLOR_WARN_BG, COLOR_WARN_BORDER
+from styles import CARD, COLOR_WARN, COLOR_WARN_BG, COLOR_WARN_BORDER
 
 log = logging.getLogger(__name__)
 

@@ -1,7 +1,6 @@
 """Tests for data_processor.py — pure pandas transforms, no network."""
 
 import pandas as pd
-import pytest
 
 
 def test_returns_dataframe(demo_df):

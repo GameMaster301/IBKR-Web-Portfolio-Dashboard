@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dash
 
+import health
 from config import cfg
 from dashboard_core import coach_ui as _coach_ui_mod
 from dashboard_core import data_callbacks as _data_callbacks_mod
@@ -13,7 +14,6 @@ from dashboard_core import intel as _intel_mod
 from dashboard_core import layout as _layout_mod
 from dashboard_core import summary as _summary_mod
 from dashboard_core import valuation as _valuation_mod
-import health
 from styles import LINK_PILL
 
 app = dash.Dash(__name__, suppress_callback_exceptions=True)

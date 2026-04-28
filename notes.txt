@@ -3,7 +3,7 @@ Add AI capability
 cloud?
 Add more metrics in ticker box? (tax loss harvesting)
 More currency conversion
-
+monte carlo simulation
 
 close the gap on UX/polish
 (e.g., better visuals, mobile responsiveness, or beginner explanations),
@@ -11,6 +11,15 @@ that would be a high-leverage next step.
 
 
 Next idea (SDR project with AI)
+Next idea (Following Technology trends)
+
+
+The "Golden Rule" of the Digital Plumber
+Don't build things just for the sake of a portfolio. Build things that make your life easier.
+
+If you find yourself clicking 5 buttons to do a task, that is a pipe you need to lay.
+
+If you are tired of copying and pasting data, that is a flow you need to automate.
 
 
 --- Sophisticated Investor Signal Stack ---

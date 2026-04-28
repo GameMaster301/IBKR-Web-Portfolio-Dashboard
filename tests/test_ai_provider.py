@@ -1,8 +1,8 @@
 """Tests for ai_provider.py — provider detection and text helpers, no HTTP calls."""
 
 import pytest
-from ai_provider import detect_provider, provider_label, _strip_followups
 
+from ai_provider import _strip_followups, detect_provider, provider_label
 
 # ── detect_provider ──────────────────────────────────────────────────────────
 
