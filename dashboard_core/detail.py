@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from decorators import safe_render
-from market_intel import get_price_history, get_stock_fundamentals, score_fundamentals
+from market_intel import get_etf_brief_data, get_price_history, get_stock_fundamentals, score_fundamentals
 from schemas import PortfolioData
 from styles import (
     CARD,
@@ -395,6 +395,145 @@ def _build_brief_section(f: dict, scored: dict, pos: dict) -> html.Div:
     ] if c is not None])
 
 
+def _build_etf_section(etf: dict, pos: dict | None = None) -> html.Div | None:
+    """
+    ETF-specific panel shown instead of the stock fundamentals section.
+    Shows fund identity, sector breakdown bars, fund stats, and position context.
+    Returns None if etf is empty.
+    """
+    if not etf:
+        return None
+
+    pos = pos or {}
+    long_name      = etf.get('long_name', '')
+    category       = etf.get('category', 'ETF / Fund')
+    expense        = etf.get('expense_ratio')
+    assets         = etf.get('total_assets')
+    sector_weights = etf.get('sector_weights') or {}
+    geo            = etf.get('geo')
+
+    _HDR = {
+        'fontSize': '13px', 'color': COLOR_TEXT_MID, 'fontWeight': '600',
+        'textTransform': 'uppercase', 'letterSpacing': '0.05em',
+    }
+    _DIVIDER_STYLE = {
+        'borderTop': f'1px solid {COLOR_BORDER_LIGHT}',
+        'marginTop': '14px', 'paddingTop': '14px',
+    }
+
+    # ── Fund identity ─────────────────────────────────────────────────────────
+    meta = []
+    if geo:
+        meta.append(geo)
+    meta.append(category)
+    if expense is not None:
+        meta.append(f"Expense ratio: {expense:.2f}%")
+    if assets is not None:
+        if assets >= 1e9:
+            meta.append(f"AUM: ${assets / 1e9:.1f}B")
+        elif assets >= 1e6:
+            meta.append(f"AUM: ${assets / 1e6:.0f}M")
+
+    identity = html.Div([
+        html.Div(long_name, style={
+            'fontWeight': '600', 'fontSize': '14px', 'color': COLOR_TEXT_STRONG,
+            'marginBottom': '3px',
+        }),
+        html.Div("  ·  ".join(meta), style={
+            'fontSize': '12px', 'color': COLOR_TEXT_MID,
+        }),
+    ], style={'marginBottom': '16px'})
+
+    # ── Sector breakdown bars ─────────────────────────────────────────────────
+    sector_block = None
+    if sector_weights:
+        sorted_sw  = sorted(sector_weights.items(), key=lambda x: x[1], reverse=True)[:8]
+        max_weight = sorted_sw[0][1] if sorted_sw else 1
+
+        rows = []
+        for sector_name, weight in sorted_sw:
+            pct       = weight * 100
+            bar_frac  = weight / max_weight  # relative width 0–1
+            rows.append(html.Div([
+                html.Div(sector_name, style={
+                    'width': '148px', 'minWidth': '148px',
+                    'fontSize': '12px', 'color': COLOR_TEXT_MID, 'fontWeight': '500',
+                }),
+                html.Div(
+                    html.Div(style={
+                        'width': f'{bar_frac * 100:.1f}%', 'height': '100%',
+                        'background': COLOR_BRAND, 'borderRadius': '2px',
+                        'transition': 'width 0.3s ease',
+                    }),
+                    style={
+                        'flex': '1', 'height': '7px',
+                        'background': COLOR_BORDER_LIGHT,
+                        'borderRadius': '2px', 'margin': '0 10px',
+                        'alignSelf': 'center',
+                    },
+                ),
+                html.Div(f"{pct:.1f}%", style={
+                    'width': '38px', 'fontSize': '12px',
+                    'color': COLOR_TEXT_STRONG, 'fontWeight': '600',
+                    'textAlign': 'right',
+                }),
+            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px'}))
+
+        sector_block = html.Div([
+            html.Div("Sector Breakdown", style={**_HDR, 'marginBottom': '10px'}),
+            *rows,
+        ])
+    else:
+        sector_block = html.Div(
+            "Sector breakdown unavailable for this ETF.",
+            style={'fontSize': '12px', 'color': COLOR_TEXT_MID, 'fontStyle': 'italic'},
+        )
+
+    # ── ETF note ──────────────────────────────────────────────────────────────
+    note = html.Div(
+        "ETFs hold a basket of securities — stock-level metrics (P/E, revenue growth) "
+        "don't apply to the fund itself.",
+        style={
+            **_DIVIDER_STYLE,
+            'fontSize': '12px', 'color': COLOR_TEXT_MID, 'fontStyle': 'italic',
+        },
+    )
+
+    # ── Position context ──────────────────────────────────────────────────────
+    pos_block = None
+    gain  = pos.get('cost_diff_pct')
+    alloc = pos.get('allocation_pct')
+    if gain is not None or alloc is not None:
+        gain_color = COLOR_GOOD if (gain or 0) >= 0 else COLOR_BAD
+        pieces = []
+        if gain is not None:
+            pieces.append(html.Span(f"{gain:+.1f}% gain",
+                                    style={'color': gain_color, 'fontWeight': '600'}))
+        if alloc is not None:
+            if pieces:
+                pieces.append(html.Span("  ·  ", style={'color': COLOR_TEXT_MID}))
+            pieces.append(html.Span(f"{alloc:.1f}% of portfolio",
+                                    style={'color': COLOR_TEXT_MID}))
+        pos_block = html.Div(
+            [html.Span("Your position: ", style={'color': COLOR_TEXT_MID}), *pieces],
+            style={**_DIVIDER_STYLE, 'fontSize': '13px'},
+        )
+
+    return html.Div([
+        html.Div("Fund Overview", style={**_HDR, 'marginBottom': '14px'}),
+        identity,
+        sector_block,
+        note,
+        *([pos_block] if pos_block else []),
+    ], style={
+        'marginTop': '18px',
+        'padding': '14px 16px 10px',
+        'background': COLOR_SURFACE,
+        'borderRadius': '10px',
+        'border': f'1px solid {COLOR_BORDER_LIGHT}',
+    })
+
+
 def _build_fundamentals_section(f: dict, pos: dict | None = None,
                                 view_mode: str = 'grid') -> html.Div | None:
     """
@@ -761,14 +900,19 @@ def register(app):
             _stat("Daily Change", chg_str, chg_color),
         ], style={'display': 'flex', 'gap': '32px', 'flexWrap': 'wrap', 'marginTop': '17px'})
 
-        # Fundamentals panel — fetched per-ticker, 4h cached
+        # Fundamentals panel — ETFs get a sector/fund brief; stocks get the
+        # signal grid + investment brief. Both are 4h cached via market_intel.
         pos_ctx = {
             'cost_diff_pct':  cost_diff_pct if avg_cost and avg_cost > 0 else None,
             'allocation_pct': r.get('allocation_pct'),
         }
-        fundamentals_section = _build_fundamentals_section(
-            get_stock_fundamentals(ticker), pos_ctx, fund_view or 'grid'
-        )
+        etf_data = get_etf_brief_data(ticker)
+        if etf_data:
+            fundamentals_section = _build_etf_section(etf_data, pos_ctx)
+        else:
+            fundamentals_section = _build_fundamentals_section(
+                get_stock_fundamentals(ticker), pos_ctx, fund_view or 'grid'
+            )
 
         # Collect trades for this ticker from live fills + uploaded CSV history.
         live_trades = (data.get('trades') or []) if isinstance(data, dict) else []

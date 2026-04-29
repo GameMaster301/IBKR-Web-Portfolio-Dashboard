@@ -92,54 +92,58 @@ def _fetch_etf_sector_weights(yf_ticker) -> dict:
 _YF_SYM_CACHE: dict = {}
 
 
+def _get_info(sym: str) -> dict:
+    """
+    Return the yfinance .info dict for an already-resolved symbol, cached 4 hours.
+    All callers go through here so that at most one .info network call is made
+    per symbol per TTL window — no matter how many functions request the same ticker.
+    """
+    key = ('info', sym)
+    def _fetch():
+        import yfinance as yf
+        try:
+            info = yf.Ticker(sym).info or {}
+            return info if info.get('quoteType') else {}
+        except Exception:
+            return {}
+    return cached_fetch(key, _TTL, _fetch)
+
+
 def _yf_info(sym: str) -> dict:
     """
     Return yfinance .info dict for sym, trying EU exchange suffixes on failure.
-    Result is NOT separately cached here — the caller's _CACHE handles that.
+    Each candidate symbol goes through _get_info so the result is cached.
     """
-    import yfinance as yf
-    try:
-        info = yf.Ticker(sym).info
-        if info.get('quoteType'):
-            return info
-    except Exception:
-        pass
+    info = _get_info(sym)
+    if info.get('quoteType'):
+        return info
     for suffix in _EU_SUFFIXES:
-        try:
-            alt = yf.Ticker(sym + suffix).info
-            if alt.get('quoteType'):
-                log.debug('[market_intel] %s resolved via %s%s', sym, sym, suffix)
-                return alt
-        except Exception:
-            continue
+        info = _get_info(sym + suffix)
+        if info.get('quoteType'):
+            log.debug('[market_intel] %s resolved via %s%s', sym, sym, suffix)
+            return info
     return {}
 
 
 def _resolve_yf_sym(sym: str) -> str:
     """
     Return the Yahoo Finance symbol string to use for a given IBKR ticker.
-    Uses _YF_SYM_CACHE so the resolution network call only happens once per session.
+    Uses _YF_SYM_CACHE (session-level) so resolution only runs once per process.
+    Internally delegates to _get_info so each candidate's .info is also cached.
     """
     if sym in _YF_SYM_CACHE:
         return _YF_SYM_CACHE[sym]
-    import yfinance as yf
-    resolved = sym
-    try:
-        if yf.Ticker(sym).info.get('quoteType'):
-            _YF_SYM_CACHE[sym] = sym
-            return sym
-    except Exception:
-        pass
+    if _get_info(sym).get('quoteType'):
+        _YF_SYM_CACHE[sym] = sym
+        return sym
     for suffix in _EU_SUFFIXES:
-        try:
-            if yf.Ticker(sym + suffix).info.get('quoteType'):
-                resolved = sym + suffix
-                log.debug('[market_intel] %s resolved to %s', sym, resolved)
-                break
-        except Exception:
-            continue
-    _YF_SYM_CACHE[sym] = resolved
-    return resolved
+        if _get_info(sym + suffix).get('quoteType'):
+            resolved = sym + suffix
+            log.debug('[market_intel] %s resolved to %s', sym, resolved)
+            _YF_SYM_CACHE[sym] = resolved
+            return resolved
+    _YF_SYM_CACHE[sym] = sym
+    return sym
 
 
 # ── Cache TTL ──────────────────────────────────────────────────────────────────
@@ -415,12 +419,10 @@ def _fetch_fundamentals_one(sym: str) -> dict:
     """Raw fetch — called by get_stock_fundamentals, wrapped in cached_fetch."""
     import yfinance as yf
 
-    t    = yf.Ticker(sym)
-    info = {}
-    try:
-        info = t.info or {}
-    except Exception:
-        pass
+    # .info is the expensive call — go through the shared cache so this fetch
+    # is deduplicated with _yf_info / _resolve_yf_sym for the same symbol.
+    info = _get_info(sym)
+    t    = yf.Ticker(sym)   # still needed for recommendations, history, etc.
 
     # ── Analyst buy / hold / sell counts ─────────────────────────────────────
     buy = hold = sell = None
@@ -585,6 +587,65 @@ def get_stock_fundamentals(ticker: str) -> dict:
         return {}
 
 
+def get_etf_brief_data(ticker: str) -> dict:
+    """
+    ETF-specific summary: category, expense ratio, AUM, sector weights.
+    Returns {} for non-ETF tickers. Cached 4 hours.
+
+    Returns
+    -------
+    {long_name, category, expense_ratio (% or None), total_assets ($ or None),
+     sector_weights {sector: fraction}, geo}
+    """
+    sym = _resolve_yf_sym(ticker)
+    key = ('etf_brief', sym)
+
+    def _fetch():
+        info = _get_info(sym)
+        if info.get('quoteType', '').upper() != 'ETF':
+            return {}
+        import yfinance as yf
+        expense_raw = _safe_f(
+            info.get('annualReportExpenseRatio') or info.get('totalExpenseRatio')
+        )
+        expense_pct = round(expense_raw * 100, 3) if expense_raw is not None else None
+        sector_weights = _fetch_etf_sector_weights(yf.Ticker(sym))
+        # geographic exposure — infer from name/category (same logic as get_sector_geo)
+        hay = ' '.join(filter(None, [
+            info.get('category') or '',
+            info.get('longName')  or '',
+            info.get('shortName') or '',
+        ])).lower()
+        if any(x in hay for x in ('u.s.', ' us ', 's&p', 'sp 500', 'nasdaq',
+                                   'russell', 'america', 'united states', 'domestic')):
+            geo = 'United States'
+        elif any(x in hay for x in ('emerging', 'em bond', 'em equity')):
+            geo = 'Emerging Markets'
+        elif any(x in hay for x in ('msci world', 'all-world', 'all world',
+                                    'global', 'world', 'international',
+                                    'developed markets')):
+            geo = 'Global'
+        elif any(x in hay for x in ('europe', 'european', 'eurozone', 'stoxx',
+                                    'ftse 100', 'ftse 250')):
+            geo = 'Europe'
+        else:
+            geo = None
+        return {
+            'long_name':      info.get('longName') or ticker,
+            'category':       info.get('category') or 'ETF / Fund',
+            'expense_ratio':  expense_pct,
+            'total_assets':   _safe_f(info.get('totalAssets')),
+            'sector_weights': sector_weights,
+            'geo':            geo,
+        }
+
+    try:
+        return cached_fetch(key, _TTL, _fetch)
+    except Exception as e:
+        log.warning('[market_intel] etf_brief %s: %s', ticker, e)
+        return {}
+
+
 def score_fundamentals(f: dict) -> dict:
     """
     Derive 6 signal labels + narrative text from a fundamentals dict.
@@ -611,6 +672,8 @@ def score_fundamentals(f: dict) -> dict:
     buy         = f.get('analyst_buy')
     hold_n      = f.get('analyst_hold')
     sell        = f.get('analyst_sell')
+    short_pct   = f.get('short_pct')
+    insider_net = f.get('insider_net')
     rsi         = f.get('rsi_14')
     above_50d   = f.get('above_50d_ma')
 
@@ -663,25 +726,42 @@ def score_fundamentals(f: dict) -> dict:
         pos_fcf      = fcf_yield   is not None and fcf_yield > 3
         high_debt    = debt_ebitda is not None and debt_ebitda > 5
         neg_fcf      = fcf_yield   is not None and fcf_yield < 0
-        if (pos_fcf and (low_debt or net_cash_pos)) or (net_cash_pos and fcf_yield is None):
+        if net_cash_pos:                    # net cash on balance sheet trumps everything
             fin_label, fin_color = 'Strong', _GREEN
-        elif neg_fcf or high_debt:
+        elif pos_fcf and low_debt:          # generates cash AND carries little debt
+            fin_label, fin_color = 'Strong', _GREEN
+        elif neg_fcf or high_debt:          # burning cash OR heavily leveraged
             fin_label, fin_color = 'At Risk', _RED
         else:
             fin_label, fin_color = 'Moderate', _YELLOW
 
-    # ── Sentiment ─────────────────────────────────────────────────────────────
+    # ── Sentiment — composite: analyst bias + insider activity + short interest ─
+    # Analysts alone are lagging. Insider buying is the strongest signal; high
+    # short interest is a warning even when Wall Street is bullish.
     snt_label, snt_color = 'Unknown', _GRAY
     if all(v is not None for v in [buy, hold_n, sell]):
         total = (buy or 0) + (hold_n or 0) + (sell or 0)
         if total > 0:
             buy_pct = (buy or 0) / total * 100
-            if buy_pct > 60:
+            score   = 2 if buy_pct > 60 else (1 if buy_pct > 40 else -1)
+            if insider_net == 'Net+':   score += 1   # insiders buying: strong positive
+            elif insider_net == 'Net−': score -= 1  # insiders selling: negative
+            if short_pct is not None and short_pct > 10:
+                score -= 1               # >10% short float = known bearish thesis
+            if score >= 3:
+                snt_label, snt_color = 'Very Bullish', _GREEN
+            elif score >= 2:
                 snt_label, snt_color = 'Bullish', _GREEN
-            elif buy_pct > 40:
+            elif score >= 1:
                 snt_label, snt_color = 'Neutral', _YELLOW
+            elif score == 0:
+                snt_label, snt_color = 'Cautious', _ORANGE
             else:
                 snt_label, snt_color = 'Bearish', _RED
+    elif insider_net == 'Net+':
+        snt_label, snt_color = 'Insider Buying', _GREEN
+    elif insider_net == 'Net−':
+        snt_label, snt_color = 'Insider Selling', _RED
 
     # ── Momentum ──────────────────────────────────────────────────────────────
     mom_label, mom_color = 'Unknown', _GRAY
@@ -692,58 +772,58 @@ def score_fundamentals(f: dict) -> dict:
         above       = above_50d is True
         below       = above_50d is False
         if overbought:
-            mom_label, mom_color = 'Overbought', _ORANGE
+            mom_label, mom_color = 'Extended', _ORANGE      # run hard — watch for reversal
         elif oversold:
-            mom_label, mom_color = 'Oversold', _TEAL
+            mom_label, mom_color = 'Oversold', _TEAL        # potential bounce zone
         elif above and neutral_rsi:
-            mom_label, mom_color = 'Positive', _GREEN
+            mom_label, mom_color = 'Uptrend', _GREEN        # trend intact, not stretched
         elif below and (rsi is None or rsi < 45):
-            mom_label, mom_color = 'Negative', _RED
+            mom_label, mom_color = 'Losing Momentum', _RED  # trend broken, weak RSI
         else:
-            mom_label, mom_color = 'Neutral', _YELLOW
+            mom_label, mom_color = 'Mixed', _YELLOW         # conflicting signals
 
     # ── Overall text ──────────────────────────────────────────────────────────
     _OVERALL_MAP = {
-        ('Very High', 'Very Strong'): ("Expensive, very strong growth, high expectations",
-                                       "Good company, but requires continued outperformance"),
-        ('Very High', 'Strong'):      ("Expensive for the growth on offer",
-                                       "Growth must continue to justify the valuation"),
-        ('Very High', 'Moderate'):    ("Expensive with modest growth",
-                                       "Limited margin of safety at current price"),
-        ('Very High', 'Weak'):        ("Very expensive, growth slowing",
-                                       "High risk — price reflects expectations not met"),
-        ('Very High', 'Declining'):   ("Very expensive while revenue shrinks",
-                                       "This combination carries high risk"),
-        ('High', 'Very Strong'):      ("Expensive but growing very fast",
-                                       "Growth may justify the premium — watch closely"),
-        ('High', 'Strong'):           ("Fairly expensive with solid growth",
-                                       "Reasonable risk/reward if growth continues"),
-        ('High', 'Moderate'):         ("Premium-priced with average growth",
-                                       "Needs to accelerate to sustain valuation"),
-        ('High', 'Weak'):             ("Expensive with weak growth",
-                                       "Market may be overpaying here"),
-        ('High', 'Declining'):        ("Expensive while revenue declines",
-                                       "Elevated risk of re-rating lower"),
-        ('Fair', 'Very Strong'):      ("Fairly valued, very strong growth",
-                                       "Potentially undervalued given the growth rate"),
-        ('Fair', 'Strong'):           ("Fairly valued with solid growth",
-                                       "A balanced risk/reward at current price"),
-        ('Fair', 'Moderate'):         ("Fairly priced with average growth",
-                                       "Steady — no obvious edge either way"),
-        ('Fair', 'Weak'):             ("Fair price, limited growth",
-                                       "Value depends on whether growth recovers"),
-        ('Fair', 'Declining'):        ("Fairly priced but revenue declining",
-                                       "Watch for further deterioration"),
-        ('Low', 'Very Strong'):       ("Cheap and growing very fast",
-                                       "Potential value opportunity if growth holds"),
-        ('Low', 'Strong'):            ("Attractively valued with solid growth",
-                                       "Favorable risk/reward if growth continues"),
-        ('Low', 'Moderate'):          ("Cheap with moderate growth",
-                                       "Could be a value play — or a value trap"),
-        ('Low', 'Weak'):              ("Low valuation, weak growth",
-                                       "Classic value trap risk — check why it's cheap"),
-        ('Low', 'Declining'):         ("Very cheap but shrinking",
-                                       "Deep value or distressed — do your homework"),
+        ('Very High', 'Very Strong'): ("High-conviction growth stock — priced for perfection",
+                                       "Strong company, but any earnings miss will reprice it sharply"),
+        ('Very High', 'Strong'):      ("Expensive premium for solid — not exceptional — growth",
+                                       "Poor risk/reward unless the growth rate accelerates"),
+        ('Very High', 'Moderate'):    ("Overpriced for the growth on offer — limited upside",
+                                       "High risk of disappointment at current valuation"),
+        ('Very High', 'Weak'):        ("Very expensive, growth falling short — unfavorable setup",
+                                       "Price implies a turnaround the numbers don't yet support"),
+        ('Very High', 'Declining'):   ("Danger zone — premium price, shrinking revenue",
+                                       "Unless a major catalyst exists, risk outweighs reward"),
+        ('High', 'Very Strong'):      ("Growth justifies a premium — but execution must continue",
+                                       "Attractive if momentum holds; vulnerable if growth slows"),
+        ('High', 'Strong'):           ("Paying up for quality — reasonable if growth persists",
+                                       "Balanced risk/reward, but limited downside protection"),
+        ('High', 'Moderate'):         ("Priced for more growth than it is currently delivering",
+                                       "Needs to accelerate to justify the valuation"),
+        ('High', 'Weak'):             ("Expensive with weak growth — unfavorable setup",
+                                       "Market may be mispricing the risk here"),
+        ('High', 'Declining'):        ("Expensive while the business contracts — high risk",
+                                       "Elevated downside if decline continues"),
+        ('Fair', 'Very Strong'):      ("Strong growth at a fair price — favorable setup",
+                                       "Potentially undervalued; reward outweighs risk here"),
+        ('Fair', 'Strong'):           ("Solid risk/reward — growing without overpaying",
+                                       "A balanced position; no urgent reason to add or exit"),
+        ('Fair', 'Moderate'):         ("Steady business, fair price — no strong edge either way",
+                                       "Hold if you own it; no compelling entry or exit signal"),
+        ('Fair', 'Weak'):             ("Fair price, but growth needs to recover to matter",
+                                       "Monitor for improvement before adding exposure"),
+        ('Fair', 'Declining'):        ("Reasonable price, but the business is heading the wrong way",
+                                       "Watch for stabilization before drawing conclusions"),
+        ('Low', 'Very Strong'):       ("Overlooked opportunity — fast growth at a low price",
+                                       "Strong risk/reward if the growth rate is sustainable"),
+        ('Low', 'Strong'):            ("Attractively priced with solid fundamentals",
+                                       "Favorable entry — reward outweighs risk if growth holds"),
+        ('Low', 'Moderate'):          ("Cheap, but verify the low price is not deserved",
+                                       "Value play or value trap — the business must stabilize"),
+        ('Low', 'Weak'):              ("Cheap for a reason — do not mistake price for value",
+                                       "Investigate why it is this cheap before acting"),
+        ('Low', 'Declining'):         ("Deep discount, but the business is shrinking",
+                                       "Only for distressed-value specialists — high risk"),
     }
     key = (val_label, grw_label)
     if key in _OVERALL_MAP:
@@ -770,16 +850,20 @@ def score_fundamentals(f: dict) -> dict:
         else:
             sentences.append(f"Revenue is shrinking ({rev:+.1f}%/yr).")
     if val_label not in ('Unknown',) and grw_label not in ('Unknown',):
-        if val_label in ('Very High', 'High') and grw_label in ('Very Strong', 'Strong'):
-            sentences.append("The stock is expensive, reflecting high future growth expectations.")
-        elif val_label in ('Very High', 'High') and grw_label in ('Moderate', 'Weak', 'Declining'):
-            sentences.append("The stock is expensive despite limited growth — a risky combination.")
+        if val_label == 'Very High' and grw_label in ('Very Strong', 'Strong'):
+            sentences.append("The stock is expensive — the market expects continued outperformance, and any earnings miss will be punished hard.")
+        elif val_label == 'Very High':
+            sentences.append("The stock is very expensive despite limited growth — the price implies a turnaround not yet visible in the numbers.")
+        elif val_label == 'High' and grw_label in ('Very Strong', 'Strong'):
+            sentences.append("The premium is supported by strong growth — but any slowdown would quickly erode the case for holding at this price.")
+        elif val_label == 'High':
+            sentences.append("The stock carries a premium the current growth rate does not fully support.")
         elif val_label == 'Low' and grw_label in ('Very Strong', 'Strong'):
-            sentences.append("The stock looks cheap relative to its growth — a potential opportunity.")
+            sentences.append("The stock is cheap relative to its growth — if that growth is real, this looks mispriced to the upside.")
         elif val_label == 'Low' and grw_label in ('Declining', 'Weak'):
-            sentences.append("The cheap price may reflect genuine business weakness.")
+            sentences.append("The low price likely reflects real business weakness — cheap is not the same as good value.")
         elif val_label == 'Fair':
-            sentences.append("The stock is reasonably priced relative to its fundamentals.")
+            sentences.append("The stock is reasonably priced — no valuation alarm in either direction.")
     if fin_label == 'Strong':
         sentences.append("Financially strong — generates real cash with manageable debt.")
     elif fin_label == 'Moderate':
@@ -787,13 +871,25 @@ def score_fundamentals(f: dict) -> dict:
     elif fin_label == 'At Risk':
         sentences.append("Financial health is a concern — elevated debt or negative cash flow.")
 
-    # ── Watch items ───────────────────────────────────────────────────────────
+    # ── Watch items — driven by the specific metrics that triggered signals ────
+    watch = []
     if val_label in ('Very High', 'High'):
-        watch = ["Earnings results vs expectations", "Revenue growth rate vs guidance"]
-    elif fin_label == 'At Risk':
-        watch = ["Cash burn rate and liquidity runway", "Debt refinancing conditions"]
-    else:
+        watch.append("Earnings vs expectations — a miss at this valuation will reprice the stock sharply")
+    if rev is not None and 0 < rev < 8:
+        watch.append("Revenue growth — it is thin and needs to hold or accelerate")
+    elif rev is not None and rev < 0:
+        watch.append("Whether the revenue decline is stabilizing or still deepening")
+    if margin is not None and margin < 10:
+        watch.append("Margin trend — profitability is below healthy levels and needs to improve")
+    if fin_label == 'At Risk':
+        watch.append("Liquidity runway and debt refinancing terms")
+    if short_pct is not None and short_pct > 10:
+        watch.append(f"High short interest ({short_pct:.1f}%) — a strong bearish thesis is already in the market")
+    if mom_label == 'Extended':
+        watch.append("Signs of momentum fading after an extended run")
+    if not watch:
         watch = ["Quarterly earnings results", "Analyst estimate revisions"]
+    watch = watch[:3]
 
     # ── Upside / Downside ─────────────────────────────────────────────────────
     if grw_label in ('Very Strong', 'Strong'):

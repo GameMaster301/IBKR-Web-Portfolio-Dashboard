@@ -769,17 +769,19 @@ def register(app):
     }
     """
 
-    # Position-detail: trigger on the rendered children (DOM element exists),
-    # skip when children is null (panel closed).
+    # Position-detail: trigger only when the user selects a ticker (opens the
+    # panel).  Using selected-ticker instead of position-detail.children means
+    # period changes, trade uploads, and 60-s data refreshes no longer yank
+    # the page back down.  Guard on null so closing the panel is a no-op.
     app.clientside_callback(
         _SMOOTH_SCROLL_JS_TMPL % {
-            'trigger':    'children',
-            'guard':      'if (!children) { return window.dash_clientside.no_update; }',
+            'trigger':    'ticker',
+            'guard':      'if (!ticker) { return window.dash_clientside.no_update; }',
             'element_id': 'position-detail',
             'delay':      280,   # wait for slideInDown (250 ms) + a safety margin
         },
         Output('position-detail-scroll-signal', 'data'),
-        Input('position-detail', 'children'),
+        Input('selected-ticker', 'data'),
         prevent_initial_call=True,
     )
 
