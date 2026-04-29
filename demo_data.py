@@ -106,8 +106,9 @@ def build_demo_payload() -> dict:
     net_liq  = round(total_mv + cash_eur, 2)
 
     account = {
+        'base_currency':        'EUR',
         'cash_usd':             2_140.55,
-        'cash_eur':             cash_eur,
+        'cash_base':            cash_eur,
         'buying_power':         round(net_liq * 1.9, 2),
         'net_liquidation':      net_liq,
         'available_funds':      round(net_liq * 0.82, 2),

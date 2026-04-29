@@ -25,8 +25,34 @@ from styles import (
 # or config.yaml overrides flow through without touching any callback.
 EURUSD_FALLBACK: float = cfg['display']['eurusd_fallback']
 
+# Currency symbol map — covers the most common IBKR account currencies.
+_CCY_SYMBOLS: dict[str, str] = {
+    'USD': '$', 'EUR': '€', 'GBP': '£', 'CHF': 'Fr ',
+    'CAD': 'C$', 'AUD': 'A$', 'JPY': '¥', 'HKD': 'HK$',
+}
 
-def to_eur(usd, rate):
+
+def ccy_symbol(ccy: str) -> str:
+    """Return the display symbol for an ISO currency code (e.g. 'EUR' → '€')."""
+    return _CCY_SYMBOLS.get((ccy or 'USD').upper(), (ccy or 'USD') + ' ')
+
+
+def to_base(usd_val: float, rate: float, base_ccy: str = 'EUR') -> float:
+    """
+    Convert a USD-denominated value to the account's base currency.
+    - EUR base: divide by EUR/USD rate
+    - USD base: return as-is (already in base)
+    - Other:    return as-is (no rate available — caller displays USD)
+    """
+    if not base_ccy or base_ccy == 'USD' or not rate:
+        return usd_val
+    if base_ccy == 'EUR':
+        return usd_val / rate
+    return usd_val
+
+
+def to_eur(usd: float, rate: float) -> float:
+    """Compatibility shim — converts USD → EUR. Prefer to_base() for new code."""
     return usd / rate if rate else usd
 
 

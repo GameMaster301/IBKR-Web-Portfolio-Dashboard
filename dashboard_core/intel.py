@@ -21,7 +21,7 @@ from datetime import date, datetime
 import plotly.graph_objects as go
 from dash import Input, Output, State, ctx, dcc, html, no_update
 
-from dashboard_core.helpers import EURUSD_FALLBACK, section_label, to_eur
+from dashboard_core.helpers import EURUSD_FALLBACK, ccy_symbol, section_label, to_base
 from decorators import NotReadyError, safe_render
 from market_intel import get_earnings_data, get_sector_geo
 from net_util import run_parallel
@@ -203,23 +203,26 @@ def _render_sector_geo_inner(intel, port_data, status=''):
     sec_colors = [colors[i % len(colors)] for i in range(len(sec_labels))]
     color_by_sec = dict(zip(sec_labels, sec_colors, strict=True))
 
-    rate = (port_data.get('account') or {}).get('eurusd_rate') or EURUSD_FALLBACK
+    acct          = port_data.get('account') or {}
+    rate          = acct.get('eurusd_rate') or EURUSD_FALLBACK
+    base_ccy      = acct.get('base_currency', 'EUR')
+    sym           = ccy_symbol(base_ccy)
     total_val_raw = (port_data.get('summary') or {}).get('total_value') or total
-    total_val_eur = to_eur(total_val_raw, rate)
-    if total_val_eur >= 1_000_000:
-        center_val = f"€{total_val_eur/1_000_000:.2f}M"
-    elif total_val_eur >= 1_000:
-        center_val = f"€{total_val_eur/1_000:.1f}K"
+    total_base    = to_base(total_val_raw, rate, base_ccy)
+    if total_base >= 1_000_000:
+        center_val = f"{sym}{total_base/1_000_000:.2f}M"
+    elif total_base >= 1_000:
+        center_val = f"{sym}{total_base/1_000:.1f}K"
     else:
-        center_val = f"€{total_val_eur:,.0f}"
+        center_val = f"{sym}{total_base:,.0f}"
 
-    sec_values_eur = [to_eur(v, rate) for v in sec_values]
+    sec_values_base = [to_base(v, rate, base_ccy) for v in sec_values]
     donut = go.Figure(go.Pie(
         labels=sec_labels, values=sec_values, hole=0.62,
         textposition='none', sort=False,
         marker=dict(colors=sec_colors),
-        customdata=sec_values_eur,
-        hovertemplate='<b>%{label}</b><br>%{percent:.1%}  ·  €%{customdata:,.0f}<extra></extra>',
+        customdata=sec_values_base,
+        hovertemplate=f'<b>%{{label}}</b><br>%{{percent:.1%}}  ·  {sym}%{{customdata:,.0f}}<extra></extra>',
     ))
     donut.update_layout(
         margin=dict(t=0, b=0, l=0, r=0),

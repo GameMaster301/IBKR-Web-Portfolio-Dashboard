@@ -12,7 +12,7 @@ from datetime import datetime
 import pandas as pd
 from dash import Input, Output, State, dcc, no_update
 
-from dashboard_core.helpers import EURUSD_FALLBACK
+from dashboard_core.helpers import EURUSD_FALLBACK, ccy_symbol, to_base
 from ibkr_client import is_demo_mode
 from styles import (
     COLOR_BAD_DEEP,
@@ -42,10 +42,14 @@ def register(app):
         from reportlab.lib.units import mm
         from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-        df = pd.DataFrame(data['positions'])
-        s = data.get('summary', {})
-        a = data.get('account', {})
-        rate = a.get('eurusd_rate', EURUSD_FALLBACK)
+        df       = pd.DataFrame(data['positions'])
+        s        = data.get('summary', {})
+        a        = data.get('account', {})
+        rate     = a.get('eurusd_rate', EURUSD_FALLBACK)
+        base_ccy = a.get('base_currency', 'EUR')
+        sym      = ccy_symbol(base_ccy)
+        sec_ccy  = 'USD' if base_ccy != 'USD' else 'EUR'
+        sec_sym  = ccy_symbol(sec_ccy)
 
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4,
@@ -79,13 +83,22 @@ def register(app):
         unreal_pnl  = s.get('total_unrealized_pnl', 0)
         real_pnl    = s.get('total_realized_pnl', 0) or 0
         daily_pnl   = a.get('daily_pnl') or s.get('total_daily_pnl', 0) or 0
+        def _base(v):
+            return f"{sym}{to_base(v, rate, base_ccy):,.2f}"
+        def _base_signed(v):
+            return f"{sym}{to_base(v, rate, base_ccy):+,.2f}"
+        def _sec(v):
+            sec_val = v / rate if base_ccy == 'USD' else v * rate
+            return f"{sec_sym}{sec_val:,.2f}"
+
         summary_data = [
-            ['Metric', 'USD', 'EUR'],
-            ['Total Value',    f"${total_val:,.2f}",   f"€{total_val/rate:,.2f}"],
-            ['Unrealized P&L', f"${unreal_pnl:+,.2f}", f"€{unreal_pnl/rate:+,.2f}"],
-            ['Realized P&L',   f"${real_pnl:+,.2f}",   f"€{real_pnl/rate:+,.2f}"],
-            ["Today's P&L",    f"${daily_pnl:+,.2f}",  f"€{daily_pnl/rate:+,.2f}"],
-            ['Cash',           f"${a.get('cash_usd', 0) or 0:,.2f}", f"€{a.get('cash_eur', 0):,.2f}"],
+            ['Metric', base_ccy, sec_ccy],
+            ['Total Value',    _base(total_val),         _sec(total_val)],
+            ['Unrealized P&L', _base_signed(unreal_pnl), _sec(unreal_pnl)],
+            ['Realized P&L',   _base_signed(real_pnl),   _sec(real_pnl)],
+            ["Today's P&L",    _base_signed(daily_pnl),  _sec(daily_pnl)],
+            ['Cash',           f"{sym}{a.get('cash_base', 0):,.2f}",
+                               f"${a.get('cash_usd', 0) or 0:,.2f}"],
         ]
         t = Table(summary_data, colWidths=[80*mm, 40*mm, 40*mm])
         t.setStyle(TableStyle([

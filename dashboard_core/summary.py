@@ -11,7 +11,7 @@ import pandas as pd
 import plotly.express as px
 from dash import Input, Output, State, dash_table, dcc, html
 
-from dashboard_core.helpers import EURUSD_FALLBACK, make_table, section_label, to_eur
+from dashboard_core.helpers import EURUSD_FALLBACK, ccy_symbol, make_table, section_label, to_base
 from decorators import NotReadyError, safe_render
 from schemas import PortfolioData
 from styles import (
@@ -59,19 +59,31 @@ def register(app):
 
         s = data['summary']
         a = data.get('account', {})
-        rate = a.get('eurusd_rate', EURUSD_FALLBACK)
+        rate      = a.get('eurusd_rate', EURUSD_FALLBACK)
+        base_ccy  = a.get('base_currency', 'EUR')
+        sym       = ccy_symbol(base_ccy)
+
+        # Secondary currency is USD when base≠USD, otherwise EUR.
+        sec_ccy   = 'USD' if base_ccy != 'USD' else 'EUR'
+        sec_sym   = ccy_symbol(sec_ccy)
 
         total_val  = s['total_value']
         unreal_pnl = s['total_unrealized_pnl']
         daily_pnl  = a.get('daily_pnl') or s.get('total_daily_pnl')
-        cash_eur   = a.get('cash_eur', 0)
+        cash_base  = a.get('cash_base', 0)
         pnl_pct    = s.get('total_pnl_pct')
 
-        def card(label, eur_val, pnl_pct=None, is_pnl=False, note=None):
-            positive = eur_val >= 0
-            accent = (COLOR_GOOD if positive else COLOR_BAD) if is_pnl else COLOR_TEXT_STRONG
-            val_str = f"€{eur_val:+,.2f}" if is_pnl else f"€{eur_val:,.2f}"
-            usd_str = f"${eur_val * rate:,.2f}"
+        def _to_sec(base_val):
+            """Convert a base-currency value to the secondary display currency."""
+            if base_ccy == 'USD':
+                return base_val / rate if rate else base_val   # USD → EUR
+            return base_val * rate                             # EUR → USD
+
+        def card(label, base_val, pnl_pct=None, is_pnl=False, note=None):
+            positive = base_val >= 0
+            accent   = (COLOR_GOOD if positive else COLOR_BAD) if is_pnl else COLOR_TEXT_STRONG
+            val_str  = f"{sym}{base_val:+,.2f}" if is_pnl else f"{sym}{base_val:,.2f}"
+            sec_str  = f"{sec_sym}{_to_sec(base_val):,.2f}"
             return html.Div([
                 html.P(label, style={
                     'fontSize': '14px', 'color': COLOR_TEXT_FAINT, 'margin': '0 0 10px',
@@ -82,7 +94,7 @@ def register(app):
                     'color': accent if is_pnl else COLOR_TEXT_STRONG, 'letterSpacing': '-0.5px',
                 }),
                 html.Div([
-                    html.Span(usd_str, style={'fontSize': '14px', 'color': COLOR_TEXT_FAINT}),
+                    html.Span(sec_str, style={'fontSize': '14px', 'color': COLOR_TEXT_FAINT}),
                     html.Span(f" · {pnl_pct:+.2f}%",
                               style={'fontSize': '14px', 'color': accent}) if pnl_pct is not None else None,
                     html.Span(f" · {note}",
@@ -93,13 +105,13 @@ def register(app):
                 'borderLeft': f'3px solid {"#ebebeb" if not is_pnl else accent}',
             })
 
-        total_val_eur = to_eur(total_val, rate)
-        cash_pct = round(cash_eur / total_val_eur * 100, 1) if total_val_eur else None
+        total_base = to_base(total_val, rate, base_ccy)
+        cash_pct   = round(cash_base / total_base * 100, 1) if total_base else None
         return [
-            card("Total Value",    total_val_eur),
-            card("Unrealized P&L", to_eur(unreal_pnl, rate), pnl_pct=pnl_pct, is_pnl=True),
-            card("Today's P&L",    to_eur(daily_pnl, rate) if daily_pnl is not None else 0, is_pnl=True),
-            card("Cash",           cash_eur, note=f"{cash_pct:.1f}% of portfolio" if cash_pct is not None else None),
+            card("Total Value",    total_base),
+            card("Unrealized P&L", to_base(unreal_pnl, rate, base_ccy), pnl_pct=pnl_pct, is_pnl=True),
+            card("Today's P&L",    to_base(daily_pnl, rate, base_ccy) if daily_pnl is not None else 0, is_pnl=True),
+            card("Cash",           cash_base, note=f"{cash_pct:.1f}% of portfolio" if cash_pct is not None else None),
         ]
 
     # ── Holdings ──────────────────────────────────────────────────────────────
@@ -121,8 +133,11 @@ def register(app):
                       'padding': '10px 0', 'borderBottom': f'0.5px solid {COLOR_BORDER_STRONG}'})
             return html.Div([skel_row for _ in range(5)],
                             style={'padding': '4px 0'}), '', None
-        df = pd.DataFrame(data['positions'])
-        rate = data.get('account', {}).get('eurusd_rate', EURUSD_FALLBACK)
+        df       = pd.DataFrame(data['positions'])
+        acct     = data.get('account', {})
+        rate     = acct.get('eurusd_rate', EURUSD_FALLBACK)
+        base_ccy = acct.get('base_currency', 'EUR')
+        sym      = ccy_symbol(base_ccy)
 
         count = f"{len(df)} positions"
         any_stale = df.get('price_stale', pd.Series(False)).any()
@@ -139,13 +154,15 @@ def register(app):
             lambda r: f"~${r['current_price']:,.2f}" if r.get('price_stale') else f"${r['current_price']:,.2f}",
             axis=1
         )
-        df['value_eur_display'] = (df['market_value'] / rate).apply(lambda v: f"€{v:,.0f}")
+        df['value_base_display'] = df['market_value'].apply(
+            lambda v: f"{sym}{to_base(v, rate, base_ccy):,.0f}"
+        )
         df['weight_display']    = df['allocation_pct'].apply(lambda v: f"{v:.1f}%")
         df['pnl_pct_display']   = df['pnl_pct'].apply(lambda v: f"{v:+.2f}%")
 
         table_data = df[[
             'ticker', 'quantity', 'avg_cost', 'price_display',
-            'market_value', 'value_eur_display', 'pnl_pct', 'pnl_pct_display',
+            'market_value', 'value_base_display', 'pnl_pct', 'pnl_pct_display',
             'unrealized_pnl', 'weight_display',
         ]].to_dict('records')
 
@@ -159,7 +176,7 @@ def register(app):
                 {'name': 'Price',    'id': 'price_display',     'type': 'text'},
                 {'name': 'Value ($)', 'id': 'market_value',     'type': 'numeric',
                  'format': {'specifier': '$,.0f'}},
-                {'name': 'Value (€)', 'id': 'value_eur_display',  'type': 'text'},
+                {'name': f'Value ({sym.strip()})', 'id': 'value_base_display', 'type': 'text'},
                 {'name': 'P&L %',   'id': 'pnl_pct_display',    'type': 'text'},
                 {'name': 'P&L ($)', 'id': 'unrealized_pnl',    'type': 'numeric',
                  'format': {'specifier': '+$,.2f'}},
@@ -188,7 +205,7 @@ def register(app):
                 [{'if': {'column_id': 'ticker'}, 'fontWeight': '600', 'textAlign': 'left'}] +
                 [{'if': {'column_id': c}, 'textAlign': 'right'}
                  for c in ['quantity', 'avg_cost', 'price_display', 'market_value',
-                           'value_eur_display', 'pnl_pct_display', 'unrealized_pnl', 'weight_display']]
+                           'value_base_display', 'pnl_pct_display', 'unrealized_pnl', 'weight_display']]
             ),
             style_data_conditional=[
                 {'if': {'filter_query': '{pnl_pct} >= 0', 'column_id': 'pnl_pct_display'},
@@ -274,7 +291,10 @@ def register(app):
 
         positions = data['positions']
         div_data  = data.get('div_data', {})
-        rate      = data.get('account', {}).get('eurusd_rate', EURUSD_FALLBACK)
+        acct      = data.get('account', {})
+        rate      = acct.get('eurusd_rate', EURUSD_FALLBACK)
+        base_ccy  = acct.get('base_currency', 'EUR')
+        sym       = ccy_symbol(base_ccy)
 
         # Build per-position dividend enrichment
         div_positions = []

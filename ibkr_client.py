@@ -317,20 +317,29 @@ class _IBKRConnection:
                         return 0.0
             return 0.0
 
+        # Detect the account's base currency (e.g. 'EUR', 'USD', 'GBP').
+        # BaseCurrency is a string tag — its value is the ISO code, not a number.
+        base_ccy = 'EUR'
+        for v in av:
+            if v.tag == 'BaseCurrency' and v.value:
+                base_ccy = v.value.strip().upper()
+                break
+
         account = {
+            'base_currency':        base_ccy,
             'cash_usd':             get_av('CashBalance',        'USD'),
-            'cash_eur':             get_av('TotalCashValue',      'EUR'),
-            'buying_power':         get_av('BuyingPower',         'EUR'),
-            'net_liquidation':      get_av('NetLiquidation',      'EUR'),
-            'available_funds':      get_av('AvailableFunds',      'EUR'),
-            'excess_liquidity':     get_av('ExcessLiquidity',     'EUR'),
-            'gross_position_value': get_av('GrossPositionValue',  'EUR'),
-            'maint_margin':         get_av('MaintMarginReq',      'EUR'),
-            'init_margin':          get_av('InitMarginReq',       'EUR'),
+            'cash_base':            get_av('TotalCashValue',      base_ccy),
+            'buying_power':         get_av('BuyingPower',         base_ccy),
+            'net_liquidation':      get_av('NetLiquidation',      base_ccy),
+            'available_funds':      get_av('AvailableFunds',      base_ccy),
+            'excess_liquidity':     get_av('ExcessLiquidity',     base_ccy),
+            'gross_position_value': get_av('GrossPositionValue',  base_ccy),
+            'maint_margin':         get_av('MaintMarginReq',      base_ccy),
+            'init_margin':          get_av('InitMarginReq',       base_ccy),
             'cushion':              get_av('Cushion',             ''),
             'leverage':             get_av('Leverage',            ''),
-            'equity_with_loan':     get_av('EquityWithLoanValue', 'EUR'),
-            'sma':                  get_av('SMA',                 'EUR'),
+            'equity_with_loan':     get_av('EquityWithLoanValue', base_ccy),
+            'sma':                  get_av('SMA',                 base_ccy),
             'day_trades_remaining': get_av('DayTradesRemaining',  ''),
             'eurusd_rate':          cfg['display']['eurusd_fallback'],
         }
