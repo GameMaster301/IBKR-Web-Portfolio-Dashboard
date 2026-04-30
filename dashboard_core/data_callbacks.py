@@ -233,14 +233,14 @@ def register(app):
                    badge("● Disconnected", COLOR_BAD, COLOR_BAD_BG, '#fecaca'), ts, "Portfolio", retry_shown, exit_demo_hidden
 
         if status == 'no_positions':
-            conn_badge = (badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER) if demo
+            conn_badge = (badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER, 'badge-warn') if demo
                           else badge("● Connected", COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD_MEDIUM))
             return status_banner("📭", "No positions found",
                                  "Connected to IBKR successfully, but your account has no open positions.", COLOR_SURFACE_SOFT), \
                    conn_badge, ts, "Sample portfolio" if demo else "Portfolio", retry_hidden, (exit_demo_shown if demo else exit_demo_hidden)
 
         if demo:
-            return None, badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER), "", "Sample portfolio", retry_hidden, exit_demo_shown
+            return None, badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER, 'badge-warn'), "", "Sample portfolio", retry_hidden, exit_demo_shown
         return None, badge(f"● Live · {_REFRESH_MS // 1000}s", COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD_MEDIUM), ts, "Portfolio", retry_hidden, exit_demo_hidden
 
     @app.callback(
@@ -293,3 +293,37 @@ def register(app):
             return no_update, no_update
         set_demo_mode(False)
         return (cur or 0) + 1, connection_status()
+
+    # ── Dark mode toggle ──────────────────────────────────────────────────────
+    # Restore stored theme on page load: sets data-theme on <html> and shows
+    # the correct icon.
+    app.clientside_callback(
+        """
+        function(id, theme) {
+            var t = theme || 'light';
+            document.documentElement.setAttribute('data-theme', t);
+            return t === 'dark' ? '☀' : '🌙';
+        }
+        """,
+        Output('theme-toggle-btn', 'children'),
+        Input('app-root', 'id'),
+        State('theme-mode', 'data'),
+    )
+
+    # Toggle on button click: flips the store value, updates data-theme, flips
+    # the icon.
+    app.clientside_callback(
+        """
+        function(n, theme) {
+            if (!n) return [window.dash_clientside.no_update, window.dash_clientside.no_update];
+            var newTheme = (theme === 'dark') ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            return [newTheme, newTheme === 'dark' ? '☀' : '🌙'];
+        }
+        """,
+        Output('theme-mode', 'data'),
+        Output('theme-toggle-btn', 'children', allow_duplicate=True),
+        Input('theme-toggle-btn', 'n_clicks'),
+        State('theme-mode', 'data'),
+        prevent_initial_call=True,
+    )

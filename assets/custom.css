@@ -1,7 +1,166 @@
-/* Smooth-scroll breathing room: when dashboard.py's clientside callbacks
-   call scrollIntoView on these panels, leave ~120 px above them so the
-   panel doesn't land flush against the viewport edge — the section
-   header is visible above it, giving clear context for what just opened.
+/* ── CSS custom properties ───────────────────────────────────────────────────
+   Light mode values (default). [data-theme="dark"] block below overrides them.
+   These variables are referenced by every inline style= dict in the Python
+   code via the var(--clr-*) strings defined in styles.py. Browsers resolve
+   them at render time, so toggling data-theme re-paints the whole page with
+   zero Python-side re-renders. */
+:root {
+  --clr-text-strong:   #111;
+  --clr-text:          #333;
+  --clr-text-slate:    #374151;
+  --clr-text-mid:      #555;
+  --clr-text-dim:      #666;
+  --clr-text-muted:    #888;
+  --clr-text-semi:     #777;
+  --clr-text-faint:    #999;
+  --clr-text-ghost:    #bbb;
+  --clr-surface-white: #fff;
+  --clr-surface-soft:  #fafafa;
+  --clr-surface:       #f5f5f5;
+  --clr-border-light:  #f0f0f0;
+  --clr-border:        #ebebeb;
+  --clr-border-mid:    #e5e7eb;
+  --clr-border-strong: #e0e0e0;
+  --clr-border-heavy:  #ddd;
+  /* Semantic accent colours — dark mode overrides these below */
+  --clr-good:          #16a34a;
+  --clr-bad:           #dc2626;
+  --clr-warn:          #b45309;
+  --clr-good-bg:       #f0fdf4;
+  --clr-bad-bg:        #fef2f2;
+  --clr-good-medium:   #bbf7d0;
+  --clr-warn-bg:       #fffbeb;
+  --clr-warn-border:   #fde68a;
+  --clr-warn-deep:     #92400e;
+}
+
+[data-theme="dark"] {
+  --clr-text-strong:   #f0f0f0;
+  --clr-text:          #d4d4d8;
+  --clr-text-slate:    #94a3b8;
+  --clr-text-mid:      #a1a1aa;
+  --clr-text-dim:      #a0a0b0;
+  --clr-text-muted:    #8a8a9a;
+  --clr-text-semi:     #9090a0;
+  --clr-text-faint:    #9898a8;
+  --clr-text-ghost:    #787888;
+  --clr-surface-white: #0f1117;
+  --clr-surface-soft:  #171b27;
+  --clr-surface:       #1e2535;
+  --clr-border-light:  #2a3040;
+  --clr-border:        #2e3548;
+  --clr-border-mid:    #333c52;
+  --clr-border-strong: #3a4254;
+  --clr-border-heavy:  #424c60;
+  /* Semantic accents — brighter so they read on dark surfaces */
+  --clr-good:          #4ade80;
+  --clr-bad:           #f87171;
+  --clr-warn:          #fbbf24;
+  --clr-good-bg:       #052e16;
+  --clr-bad-bg:        #2d1010;
+  --clr-good-medium:   #166534;
+  --clr-warn-bg:       #2d1a04;
+  --clr-warn-border:   #78350f;
+  --clr-warn-deep:     #fbbf24;
+}
+
+/* Body background syncs with the page root variable */
+[data-theme="dark"] body { background: #0f1117; }
+
+/* ── Dark mode: override hardcoded hex values in this file and in inline ──────
+   styles that Dash renders. !important beats inline style= attributes. */
+
+/* Holdings hover row */
+[data-theme="dark"] #holdings-datatable tr:hover td {
+  background: #1a2a3f !important;
+}
+
+/* Position-detail link hover */
+[data-theme="dark"] #position-detail a:hover { background: #1a2a3f !important; }
+
+/* Skeleton shimmer */
+[data-theme="dark"] .skeleton-block {
+  background: linear-gradient(90deg, #1e2535 25%, #252d3f 50%, #1e2535 75%);
+  background-size: 1200px 100%;
+  animation: skeletonShimmer 1.6s ease-in-out infinite;
+}
+
+/* Coach chip / button hovers */
+[data-theme="dark"] .coach-chip:hover {
+  background: #e0e0e0 !important;
+  color: #111 !important;
+  border-color: #e0e0e0 !important;
+}
+[data-theme="dark"] .coach-icon-btn:hover { color: #e0e0e0 !important; background: #1e2535 !important; }
+[data-theme="dark"] .coach-send-btn:hover:not([disabled]) { background: #d0d0d0 !important; }
+[data-theme="dark"] .coach-input-row input:focus { border-color: #a1a1aa !important; }
+
+/* DataTable cells: row hover + scrollbar area */
+[data-theme="dark"] .dash-spreadsheet-container .dash-spreadsheet-inner tr:hover td {
+  background: #1a2a3f !important;
+}
+
+/* ── Plotly charts dark mode ─────────────────────────────────────────────────
+   Plotly renders as SVG. SVG text colour = fill; gridlines = stroke.
+   !important overrides both SVG inline styles and Plotly-set attributes. */
+[data-theme="dark"] .js-plotly-plot .main-svg text { fill: #a1a1aa !important; }
+[data-theme="dark"] .js-plotly-plot .ytick text,
+[data-theme="dark"] .js-plotly-plot .xtick text { fill: #a1a1aa !important; }
+[data-theme="dark"] .js-plotly-plot .ygrid path,
+[data-theme="dark"] .js-plotly-plot .xgrid path  { stroke: #3d5068 !important; }
+[data-theme="dark"] .js-plotly-plot .bg           { fill: #1e2535 !important; }
+[data-theme="dark"] .js-plotly-plot .hoverlayer .hovertext rect {
+  fill: #1e2535 !important; stroke: #3a4254 !important;
+}
+[data-theme="dark"] .js-plotly-plot .hoverlayer .hovertext text { fill: #e0e0e0 !important; }
+[data-theme="dark"] .js-plotly-plot .legend .bg   { fill: #1e2535 !important; }
+[data-theme="dark"] .js-plotly-plot .annotation-text text { fill: #a1a1aa !important; }
+
+/* DataTable active/focused cell */
+[data-theme="dark"] #holdings-datatable td.focused,
+[data-theme="dark"] #holdings-datatable td.cell--selected,
+[data-theme="dark"] .dash-spreadsheet td.focused {
+  background-color: #1a2a3f !important;
+}
+
+/* Exit demo button */
+[data-theme="dark"] #exit-demo-btn {
+  background: var(--clr-warn-bg) !important;
+  color: var(--clr-warn-deep) !important;
+  border-color: var(--clr-warn-border) !important;
+}
+
+/* Warn-coloured badges: demo-mode badge, stale-price badge */
+[data-theme="dark"] .badge-warn {
+  background: var(--clr-warn-bg) !important;
+  color: var(--clr-warn-deep) !important;
+  border-color: var(--clr-warn-border) !important;
+}
+
+/* Coach assistant response bubble */
+[data-theme="dark"] .coach-assistant-bubble {
+  background: var(--clr-surface) !important;
+  color: var(--clr-text-strong) !important;
+}
+
+/* Coach error bubble */
+[data-theme="dark"] .coach-error-bubble {
+  background: var(--clr-warn-bg) !important;
+  color: var(--clr-warn-deep) !important;
+  border-color: var(--clr-warn-border) !important;
+}
+
+/* Earnings calendar — imminent row highlight */
+.earnings-row-imminent td { background: #fff8f0; }
+[data-theme="dark"] .earnings-row-imminent td {
+  background: #2d1a04 !important;
+}
+
+/* Theme toggle button hover */
+#theme-toggle-btn { transition: background 0.15s ease; }
+#theme-toggle-btn:hover { background: var(--clr-surface) !important; }
+
+/* ── Smooth-scroll breathing room ───────────────────────────────────────────
    scroll-margin-top is the standardised, declarative way to do this. */
 #position-detail, #coach-panel {
   scroll-margin-top: 220px;
@@ -133,3 +292,77 @@
 .coach-input-row input:focus { outline: none; border-color: #111 !important; }
 
 .coach-panel-card { box-sizing: border-box; }
+
+/* Coach starter suggestion cards */
+.coach-starter-card:hover {
+  border-color: #c7d2fe !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08) !important;
+  transform: translateY(-1px);
+}
+
+/* Coach clear-link text buttons */
+.coach-clear-link:hover { color: #111 !important; }
+
+/* Coach input container focus-within glow */
+.coach-input-row:focus-within {
+  border-color: #94a3b8 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.10) !important;
+}
+
+
+/* ── Fundamentals metric grid: ⓘ info icon + hover tooltip ──────────────── */
+.metric-info-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.metric-tooltip {
+  visibility: hidden;
+  opacity: 0;
+  width: 230px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  border-radius: 7px;
+  padding: 9px 12px;
+  position: absolute;
+  z-index: 9999;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  white-space: normal;
+}
+
+/* Small arrow pointing down */
+.metric-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #1e293b;
+}
+
+.metric-info-icon:hover .metric-tooltip {
+  visibility: visible;
+  opacity: 1;
+}

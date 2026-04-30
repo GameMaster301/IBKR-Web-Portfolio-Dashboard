@@ -99,10 +99,10 @@ def _build_price_sparkline(ticker, period, avg_cost, trades=None):
     if avg_cost and avg_cost == avg_cost and avg_cost > 0:
         lo, hi = min(prices), max(prices)
         if lo * 0.6 <= avg_cost <= hi * 1.4:
-            fig.add_hline(y=avg_cost, line=dict(color=COLOR_TEXT_MID, width=1, dash='dot'),
+            fig.add_hline(y=avg_cost, line=dict(color='#888', width=1, dash='dot'),
                           annotation_text=f'Avg ${avg_cost:,.2f}',
                           annotation_position='top left',
-                          annotation=dict(font=dict(size=12, color=COLOR_TEXT)))
+                          annotation=dict(font=dict(size=12, color='#888')))
 
     # Trade markers (BUY ▲ green / SELL ▼ red) on trades whose date falls
     # within the plotted window.  `dates` are 'YYYY-MM-DD' strings.
@@ -130,14 +130,14 @@ def _build_price_sparkline(ticker, period, avg_cost, trades=None):
             fig.add_trace(go.Scatter(
                 x=buys_x, y=buys_y, mode='markers', name='BUY',
                 marker=dict(symbol='triangle-up', color=COLOR_GOOD,
-                            size=24, line=dict(color=COLOR_SURFACE_WHITE, width=1)),
+                            size=24, line=dict(color='rgba(0,0,0,0)', width=1)),
                 hovertext=buys_hover, hoverinfo='text',
             ))
         if sells_x:
             fig.add_trace(go.Scatter(
                 x=sells_x, y=sells_y, mode='markers', name='SELL',
                 marker=dict(symbol='triangle-down', color=COLOR_BAD,
-                            size=24, line=dict(color=COLOR_SURFACE_WHITE, width=1)),
+                            size=24, line=dict(color='rgba(0,0,0,0)', width=1)),
                 hovertext=sells_hover, hoverinfo='text',
             ))
     pct_change = (last - first) / first * 100 if first else 0
@@ -154,12 +154,12 @@ def _build_price_sparkline(ticker, period, avg_cost, trades=None):
         margin=dict(l=8, r=8, t=8, b=8), height=200,
         xaxis=dict(showgrid=False, showticklabels=False, title=None),
         yaxis=dict(showgrid=True, gridcolor='#f2f2f2', title=None,
-                   tickfont=dict(size=12, color=COLOR_TEXT_MID),
+                   tickfont=dict(size=12, color='#888'),
                    range=[y_lo - pad, y_hi + pad]),
-        plot_bgcolor=COLOR_SURFACE_WHITE, paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
         showlegend=False,
-        hoverlabel=dict(bgcolor=COLOR_SURFACE_WHITE, bordercolor=COLOR_BRAND,
-                        font=dict(size=14, color=COLOR_TEXT_STRONG, family='Inter, system-ui, sans-serif')),
+        hoverlabel=dict(bordercolor=COLOR_BRAND,
+                        font=dict(size=14, family='Inter, system-ui, sans-serif')),
     )
     summary_line = html.Div([
         html.Span(f"{period} ", style={'color': COLOR_TEXT_MID, 'fontSize': '13px',
@@ -553,13 +553,21 @@ def _build_fundamentals_section(f: dict, pos: dict | None = None,
         'paddingBottom': '5px', 'marginBottom': '10px',
     }
 
-    def _metric(label, value, subtitle, color=None):
+    def _metric(label, value, subtitle, color=None, tooltip=None):
+        label_content = html.Div([
+            label,
+            html.Span([
+                "ⓘ",
+                html.Span(tooltip, className='metric-tooltip'),
+            ], className='metric-info-icon') if tooltip else None,
+        ], style={
+            'fontSize': '11px', 'color': COLOR_TEXT_MID,
+            'textTransform': 'uppercase', 'letterSpacing': '0.06em',
+            'fontWeight': '600', 'marginBottom': '1px',
+            'display': 'flex', 'alignItems': 'center', 'gap': '4px',
+        })
         return html.Div([
-            html.Div(label, style={
-                'fontSize': '11px', 'color': COLOR_TEXT_MID,
-                'textTransform': 'uppercase', 'letterSpacing': '0.06em',
-                'fontWeight': '600', 'marginBottom': '1px',
-            }),
+            label_content,
             html.Div(value or '—', style={
                 'fontSize': '16px', 'fontWeight': '700',
                 'color': color or COLOR_TEXT_STRONG,
@@ -591,9 +599,12 @@ def _build_fundamentals_section(f: dict, pos: dict | None = None,
 
     val_col = html.Div([
         html.Div("Valuation", style=_COL_HDR),
-        _metric("Fwd P/E",    f"{pe:.1f}×"   if pe   else None, "price vs expected earnings", pe_color),
-        _metric("PEG ratio",  f"{peg:.2f}"   if peg  else None, "value adjusted for growth",  peg_color),
-        _metric("EV/EBITDA",  f"{ev:.1f}×"   if ev   else None, "company vs operating profit", ev_color),
+        _metric("Fwd P/E",    f"{pe:.1f}×"   if pe   else None, "price vs expected earnings", pe_color,
+                tooltip="Forward Price-to-Earnings: price divided by expected next-year earnings. <20× is generally good; >35× is expensive relative to history."),
+        _metric("PEG ratio",  f"{peg:.2f}"   if peg  else None, "value adjusted for growth",  peg_color,
+                tooltip="P/E divided by the earnings growth rate. <1 = potentially undervalued for its growth; >2 = expensive. Combines value and growth in one number."),
+        _metric("EV/EBITDA",  f"{ev:.1f}×"   if ev   else None, "company vs operating profit", ev_color,
+                tooltip="Enterprise Value divided by operating profit (before interest, taxes, depreciation & amortisation). <15× is generally good value; >25× is expensive."),
     ], style=_COL_STYLE)
 
     # ── Growth column ─────────────────────────────────────────────────────────
@@ -610,9 +621,12 @@ def _build_fundamentals_section(f: dict, pos: dict | None = None,
 
     growth_col = html.Div([
         html.Div("Growth", style=_COL_HDR),
-        _metric("Revenue",    f"{rev:+.1f}%/yr" if rev    is not None else None, "annual revenue change", rev_color),
-        _metric("Net Margin", f"{margin:.1f}%"   if margin is not None else None, "profit per $1 of revenue", margin_color),
-        _metric("EPS Beat",   beat,                                                "earnings surprises (last 4 qtrs)"),
+        _metric("Revenue",    f"{rev:+.1f}%/yr" if rev    is not None else None, "annual revenue change", rev_color,
+                tooltip="Year-over-year change in total sales. >10%/yr indicates strong expansion. Negative means the company is shrinking."),
+        _metric("Net Margin", f"{margin:.1f}%"   if margin is not None else None, "profit per $1 of revenue", margin_color,
+                tooltip="Percentage of revenue kept as profit after all costs. >20% is strong; <5% is thin. Higher margins mean a more efficient or competitively protected business."),
+        _metric("EPS Beat",   beat,                                                "earnings surprises (last 4 qtrs)",
+                tooltip="How often the company beat analyst earnings-per-share forecasts over the last 4 quarters. Consistent beats signal disciplined management and conservative guidance."),
     ], style=_COL_STYLE)
 
     # ── Sentiment column ──────────────────────────────────────────────────────
@@ -666,9 +680,12 @@ def _build_fundamentals_section(f: dict, pos: dict | None = None,
 
     sentiment_col = html.Div([
         html.Div("Sentiment", style=_COL_HDR),
-        _metric("Analysts",     analyst_val, "Wall Street recommendations"),
-        _metric("Price Target", target_val,  "analyst consensus forecast"),
-        _metric("Short / Insider", si_val,   "bearish bets · exec activity"),
+        _metric("Analysts",     analyst_val, "Wall Street recommendations",
+                tooltip="Aggregated buy/hold/sell ratings from professional Wall Street analysts. A high buy count relative to sells signals broadly positive sentiment."),
+        _metric("Price Target", target_val,  "analyst consensus forecast",
+                tooltip="Average price target across all analyst forecasts, plus the implied upside or downside vs the current price. Useful as a rough consensus view — not a guarantee."),
+        _metric("Short / Insider", si_val,   "bearish bets · exec activity",
+                tooltip="Short interest = % of shares being bet against (high short % = more bearish positioning). Insider activity = net buying or selling by executives based on SEC filings."),
     ], style=_COL_STYLE)
 
     three_cols = html.Div([
@@ -684,6 +701,12 @@ def _build_fundamentals_section(f: dict, pos: dict | None = None,
     above_50d = f.get('above_50d_ma')
     vol       = f.get('volume_vs_avg')
 
+    def _tech_info(tooltip_text):
+        return html.Span([
+            "ⓘ",
+            html.Span(tooltip_text, className='metric-tooltip'),
+        ], className='metric-info-icon', style={'fontSize': '11px', 'marginLeft': '3px'})
+
     tech_chips = []
     if rsi is not None:
         rsi_color = (COLOR_BAD  if rsi > 70 else
@@ -693,22 +716,26 @@ def _build_fundamentals_section(f: dict, pos: dict | None = None,
             html.Span("RSI ", style={'color': COLOR_TEXT_MID, 'fontSize': '12px'}),
             html.Span(f"{rsi:.0f}", style={'color': rsi_color, 'fontWeight': '700'}),
             html.Span(f" ({rsi_tag})", style={'color': COLOR_TEXT_MID, 'fontSize': '12px'}),
-        ], style={'marginRight': '14px'}))
+            _tech_info("Relative Strength Index (14-day). Measures price momentum. >70 = overbought (may pull back soon); <30 = oversold (may bounce). 30–70 = neutral trend."),
+        ], style={'marginRight': '14px', 'position': 'relative'}))
 
     if above_50d is not None:
         ma_color = COLOR_GOOD if above_50d else COLOR_BAD
         ma_text  = "Above 50d MA" if above_50d else "Below 50d MA"
-        tech_chips.append(html.Span(ma_text, style={
-            'color': ma_color, 'fontWeight': '600',
-            'fontSize': '13px', 'marginRight': '14px',
-        }))
+        tech_chips.append(html.Span([
+            html.Span(ma_text, style={
+                'color': ma_color, 'fontWeight': '600', 'fontSize': '13px',
+            }),
+            _tech_info("Whether the stock is trading above or below its 50-day moving average — a widely watched trend signal. Above = bullish momentum; below = bearish."),
+        ], style={'marginRight': '14px', 'position': 'relative'}))
 
     if vol:
         vol_color = COLOR_WARN if vol == 'High' else COLOR_TEXT_MID
         tech_chips.append(html.Span([
             html.Span("Volume ", style={'color': COLOR_TEXT_MID, 'fontSize': '12px'}),
             html.Span(vol, style={'color': vol_color, 'fontWeight': '600', 'fontSize': '13px'}),
-        ]))
+            _tech_info("Today's trading volume vs the 10-day average. High volume on a price move adds conviction — it means more participants agree. Low volume moves are less reliable."),
+        ], style={'position': 'relative'}))
 
     tech_row = html.Div([
         html.Div("Technicals", style={**_COL_HDR, 'borderBottom': 'none',

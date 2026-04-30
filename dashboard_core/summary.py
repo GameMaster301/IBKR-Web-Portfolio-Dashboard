@@ -17,6 +17,8 @@ from schemas import PortfolioData
 from styles import (
     CARD,
     COLOR_BAD,
+    COLOR_BORDER,
+    COLOR_BORDER_LIGHT,
     COLOR_BORDER_STRONG,
     COLOR_BRAND,
     COLOR_GOOD,
@@ -102,7 +104,7 @@ def register(app):
                 ], style={'marginTop': '4px'}),
             ], style={
                 'background': COLOR_SURFACE_SOFT, 'borderRadius': '12px', 'padding': '18px',
-                'borderLeft': f'3px solid {"#ebebeb" if not is_pnl else accent}',
+                'borderLeft': f'3px solid {accent if is_pnl else COLOR_BORDER}',
             })
 
         total_base = to_base(total_val, rate, base_ccy)
@@ -142,6 +144,7 @@ def register(app):
         count = f"{len(df)} positions"
         any_stale = df.get('price_stale', pd.Series(False)).any()
         stale_badge = html.Span("● Market closed · last-close prices",
+                                className='badge-warn',
                                 style={
                                     'fontSize': '13px', 'color': COLOR_WARN,
                                     'background': COLOR_WARN_BG, 'border': '0.5px solid #fde68a',
@@ -192,14 +195,14 @@ def register(app):
                 'fontSize': '14px', 'color': COLOR_TEXT_FAINT, 'fontWeight': '500',
                 'textTransform': 'uppercase', 'letterSpacing': '0.04em',
                 'backgroundColor': COLOR_SURFACE_WHITE, 'border': 'none',
-                'borderBottom': '0.5px solid #f5f5f5',
+                'borderBottom': f'0.5px solid {COLOR_BORDER_LIGHT}',
                 'paddingBottom': '14px',
             },
             style_cell={
                 'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 'fontSize': '16px', 'padding': '12px 12px',
                 'backgroundColor': COLOR_SURFACE_WHITE, 'color': COLOR_TEXT_STRONG,
-                'border': 'none', 'borderBottom': '0.5px solid #f5f5f5',
+                'border': 'none', 'borderBottom': f'0.5px solid {COLOR_BORDER_LIGHT}',
             },
             style_cell_conditional=(
                 [{'if': {'column_id': 'ticker'}, 'fontWeight': '600', 'textAlign': 'left'}] +
@@ -338,7 +341,7 @@ def register(app):
                                      'color': color, 'letterSpacing': '-0.5px'}),
                 html.P(sub, style={'fontSize': '13px', 'color': COLOR_TEXT_MUTED, 'margin': '3px 0 0'}) if sub else None,
             ], style={'background': COLOR_SURFACE_SOFT, 'borderRadius': '12px', 'padding': '10px 14px',
-                      'borderLeft': '3px solid #ebebeb'})
+                      'borderLeft': f'3px solid {COLOR_BORDER}'})
 
         portfolio_yield = round(annual_income / data['summary']['total_value'] * 100, 2) \
             if annual_income and data.get('summary', {}).get('total_value') else None
@@ -372,7 +375,7 @@ def register(app):
                     td_r(nxt_date, color=COLOR_TEXT_DIM),
                     td_r(nxt_amt,  color=COLOR_TEXT_DIM),
                     td_r(nxt_pay),
-                ], style={'borderTop': '0.5px solid #f5f5f5'}))
+                ], style={'borderTop': f'0.5px solid {COLOR_BORDER_LIGHT}'}))
 
             yield_table = html.Div([
                 section_label("Yield per Position"),

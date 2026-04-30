@@ -75,8 +75,8 @@ def make_table(cols, rows):
                       style=TABLE_WRAPPER)
 
 
-def badge(text, color, bg, border):
-    return html.Span(text, style={
+def badge(text, color, bg, border, className=None):
+    return html.Span(text, className=className, style={
         'fontSize': '14px', 'color': color, 'background': bg,
         'padding': '4px 10px', 'borderRadius': '20px',
         'border': f'0.5px solid {border}',

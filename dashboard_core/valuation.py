@@ -32,7 +32,6 @@ from styles import (
     COLOR_BRAND,
     COLOR_GOOD,
     COLOR_GOOD_SOFT,
-    COLOR_SURFACE,
     COLOR_SURFACE_WHITE,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
@@ -388,11 +387,11 @@ def _render_market_valuation_inner(data):
 
         # Zone background bands
         bands = [
-            (0,   15, 'rgba(22,163,74,0.20)'),
-            (15,  20, 'rgba(34,197,94,0.20)'),
-            (20,  25, 'rgba(234,179,8,0.20)'),
-            (25,  30, 'rgba(249,115,22,0.20)'),
-            (30,  55, 'rgba(220,38,38,0.20)'),
+            (0,   15, 'rgba(22,163,74,0.15)'),
+            (15,  20, 'rgba(34,197,94,0.15)'),
+            (20,  25, 'rgba(234,179,8,0.15)'),
+            (25,  30, 'rgba(249,115,22,0.15)'),
+            (30,  55, 'rgba(220,38,38,0.15)'),
         ]
         for y0, y1, fill in bands:
             fig.add_hrect(y0=y0, y1=y1, fillcolor=fill,
@@ -410,19 +409,19 @@ def _render_market_valuation_inner(data):
             if x0 >= dates_plot[0]:
                 fig.add_vrect(
                     x0=x0, x1=x1,
-                    fillcolor='rgba(100,100,100,0.10)',
+                    fillcolor='rgba(128,128,128,0.12)',
                     layer='below', line_width=0,
                     annotation_text=f'<b>{label}</b>',
                     annotation_position=apos,
-                    annotation_font=dict(size=11, color=COLOR_TEXT_SEMI),
+                    annotation_font=dict(size=11, color='#94a3b8'),
                 )
 
         # All-time historical mean line (dotted, grey)
         fig.add_hline(y=mean_val, line_dash='dot',
-                      line_color=COLOR_TEXT_GHOST, line_width=1,
+                      line_color='#94a3b8', line_width=1,
                       annotation_text=f'100-yr mean {mean_val:.0f}×',
                       annotation_position='top left',
-                      annotation_font=dict(size=10, color=COLOR_TEXT_GHOST))
+                      annotation_font=dict(size=10, color='#94a3b8'))
 
         # Modern mean line (dashed, blue-grey) — last 20 years
         fig.add_hline(y=modern_mean, line_dash='dash',
@@ -445,7 +444,7 @@ def _render_market_valuation_inner(data):
             x=[dates_plot[-1]], y=[vals_plot[-1]],
             mode='markers+text',
             marker=dict(color=ccolor if cape_d else COLOR_BRAND, size=10,
-                        line=dict(color=COLOR_SURFACE_WHITE, width=2)),
+                        line=dict(color='rgba(0,0,0,0)', width=2)),
             text=[f'  {vals_plot[-1]:.1f}×'],
             textposition='middle right',
             textfont=dict(size=11, color=ccolor if cape_d else COLOR_BRAND),
@@ -460,18 +459,38 @@ def _render_market_valuation_inner(data):
             showlegend=False,
             hovermode='x unified',
             xaxis=dict(showgrid=False, zeroline=False,
-                       tickfont=dict(size=10, color=COLOR_TEXT_GHOST),
+                       tickfont=dict(size=10, color='#94a3b8'),
                        tickangle=-30),
-            yaxis=dict(showgrid=True, gridcolor=COLOR_SURFACE, zeroline=False,
-                       tickfont=dict(size=10, color=COLOR_TEXT_GHOST),
+            yaxis=dict(showgrid=True, gridcolor='#e5e7eb',
+                       zeroline=False,
+                       tickfont=dict(size=10, color='#94a3b8'),
                        ticksuffix='×', title=None),
             height=260,
         )
 
         cape_chart = html.Div([
-            html.P("Shiller CAPE — 50-year history", style={
-                'fontSize': '14px', 'color': '#000', 'margin': '20px 0 4px',
-                'textTransform': 'uppercase', 'letterSpacing': '0.05em',
+            html.Div([
+                html.Span("Shiller CAPE — 50-year history", style={
+                    'fontSize': '14px', 'color': COLOR_TEXT_STRONG,
+                    'textTransform': 'uppercase', 'letterSpacing': '0.05em',
+                }),
+                html.Span([
+                    "ⓘ",
+                    html.Span(
+                        "The Shiller CAPE (Cyclically Adjusted Price-to-Earnings) divides the S&P 500 "
+                        "price by the average of 10 years of inflation-adjusted earnings, smoothing out "
+                        "short-term profit swings. The grey shaded areas mark major market crashes. "
+                        "The dotted line is the 100-year average (~17×); the dashed line is the modern "
+                        "20-year average (~25×), reflecting structurally higher valuations since the tech era. "
+                        "Elevated CAPE readings have historically preceded below-average long-run returns — "
+                        "just not on a predictable timeline.",
+                        className='metric-tooltip',
+                        style={'width': '280px'},
+                    ),
+                ], className='metric-info-icon', style={'fontSize': '13px', 'marginLeft': '6px'}),
+            ], style={
+                'display': 'flex', 'alignItems': 'center',
+                'margin': '20px 0 4px', 'position': 'relative',
             }),
             html.P([
                 html.Span("▮ Undervalued (<15)",        style={'color': COLOR_GOOD}),

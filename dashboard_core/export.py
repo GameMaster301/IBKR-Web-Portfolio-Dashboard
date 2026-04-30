@@ -16,14 +16,16 @@ from dashboard_core.helpers import EURUSD_FALLBACK, ccy_symbol, to_base
 from ibkr_client import is_demo_mode
 from styles import (
     COLOR_BAD_DEEP,
-    COLOR_BORDER_STRONG,
     COLOR_GOOD_DEEP,
-    COLOR_SURFACE,
-    COLOR_SURFACE_SOFT,
     COLOR_WARN_BG,
     COLOR_WARN_BORDER,
     COLOR_WARN_DEEP,
 )
+
+# Reportlab needs actual hex values — CSS variables don't work with colors.HexColor().
+_PDF_SURFACE      = '#f5f5f5'
+_PDF_SURFACE_SOFT = '#fafafa'
+_PDF_BORDER       = '#e0e0e0'
 
 
 def register(app):
@@ -102,12 +104,12 @@ def register(app):
         ]
         t = Table(summary_data, colWidths=[80*mm, 40*mm, 40*mm])
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(COLOR_SURFACE)),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(_PDF_SURFACE)),
             ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE',   (0, 0), (-1, -1), 9),
             ('ALIGN',      (1, 0), (-1, -1), 'RIGHT'),
-            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor(COLOR_BORDER_STRONG)),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor(COLOR_SURFACE_SOFT)]),
+            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor(_PDF_BORDER)),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor(_PDF_SURFACE_SOFT)]),
             ('TOPPADDING',  (0, 0), (-1, -1), 5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
@@ -127,11 +129,11 @@ def register(app):
         ]
         pt = Table(perf_data, colWidths=[82*mm, 82*mm])
         pt.setStyle(TableStyle([
-            ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor(COLOR_SURFACE)),
+            ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor(_PDF_SURFACE)),
             ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE',      (0, 0), (-1, -1), 9),
             ('ALIGN',         (0, 0), (-1, -1), 'CENTER'),
-            ('GRID',          (0, 0), (-1, -1), 0.25, colors.HexColor(COLOR_BORDER_STRONG)),
+            ('GRID',          (0, 0), (-1, -1), 0.25, colors.HexColor(_PDF_BORDER)),
             ('TEXTCOLOR',     (0, 1), (0, 1), colors.HexColor(COLOR_GOOD_DEEP)),  # best = green
             ('TEXTCOLOR',     (1, 1), (1, 1), colors.HexColor(COLOR_BAD_DEEP)),  # worst = red
             ('FONTNAME',      (0, 1), (-1, 1), 'Helvetica-Bold'),
@@ -161,13 +163,13 @@ def register(app):
         ht = Table(hold_data, colWidths=[20*mm, 12*mm, 22*mm, 22*mm, 16*mm, 26*mm, 16*mm, 16*mm])
         # colour positive/negative day % and P&L % cells per row
         ht_style = [
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(COLOR_SURFACE)),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(_PDF_SURFACE)),
             ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE',   (0, 0), (-1, -1), 8),
             ('ALIGN',      (1, 0), (-1, -1), 'RIGHT'),
             ('ALIGN',      (0, 0), (0, -1), 'LEFT'),
-            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor(COLOR_BORDER_STRONG)),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor(COLOR_SURFACE_SOFT)]),
+            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor(_PDF_BORDER)),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor(_PDF_SURFACE_SOFT)]),
             ('TOPPADDING',  (0, 0), (-1, -1), 4),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ]

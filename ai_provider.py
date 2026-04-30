@@ -81,6 +81,47 @@ def provider_label(name: str) -> str:
             'openai':    'OpenAI GPT'}.get(name, 'Unknown')
 
 
+# ── Key validation ────────────────────────────────────────────────────────────
+
+_MODELS_URLS = {
+    'anthropic': ('GET', 'https://api.anthropic.com/v1/models'),
+    'openai':    ('GET', 'https://api.openai.com/v1/models'),
+    'xai':       ('GET', 'https://api.x.ai/v1/models'),
+}
+
+
+def validate_key(api_key: str) -> tuple[bool, str]:
+    """
+    Ping the provider's models endpoint to confirm the key is accepted.
+    Returns (True, '') on success or (False, human-readable error) on failure.
+    """
+    provider = detect_provider(api_key)
+    if not provider:
+        return False, (
+            "Unrecognised key format. "
+            "Expected sk-ant-… (Anthropic), xai-… (xAI), or sk-… (OpenAI)."
+        )
+    _, url = _MODELS_URLS[provider]
+    headers = (
+        {'x-api-key': api_key, 'anthropic-version': '2023-06-01'}
+        if provider == 'anthropic'
+        else {'Authorization': f'Bearer {api_key}'}
+    )
+    try:
+        r = requests.get(url, headers=headers, timeout=8)
+        if r.status_code == 200:
+            return True, ''
+        if r.status_code == 401:
+            return False, "Key rejected by the provider — check for typos or that it hasn't expired."
+        if r.status_code == 403:
+            return False, "Access denied (403) — the key may lack required permissions."
+        return False, f"Provider returned HTTP {r.status_code} — the key may be invalid."
+    except requests.Timeout:
+        return False, "Validation timed out — check your internet connection and try again."
+    except Exception as e:
+        return False, f"Could not reach provider: {e}"
+
+
 # ── Per-provider call ─────────────────────────────────────────────────────────
 
 _TIMEOUT = 45  # seconds; the dashboard is synchronous, keep it modest

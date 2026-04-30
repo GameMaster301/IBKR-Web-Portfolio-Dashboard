@@ -25,42 +25,45 @@ from __future__ import annotations
 # Use these names instead of raw hex in dashboard.py. When you want to tweak
 # a tone globally, change it here.
 
-# Semantic tones
-COLOR_GOOD           = '#16a34a'   # green — positive P&L, "fairly valued"
-COLOR_GOOD_SOFT      = '#22c55e'   # lighter green for secondary good states
-COLOR_GOOD_BG        = '#f0fdf4'   # pale green panel background
-COLOR_WARN           = '#b45309'   # amber — warnings, "running hot"
-COLOR_WARN_SOFT      = '#f97316'   # orange, stronger warn
-COLOR_WARN_YELLOW    = '#eab308'   # yellow — mid-warn zone
-COLOR_WARN_BG        = '#fffbeb'   # pale amber panel background
-COLOR_WARN_BORDER    = '#fde68a'
-COLOR_WARN_DEEP      = '#92400e'
-COLOR_BAD            = '#dc2626'   # red — negative P&L, overvalued
-COLOR_BAD_DEEP       = '#991b1b'   # deep red — high-contrast text on light backgrounds
-COLOR_BAD_BG         = '#fef2f2'   # pale red panel background
-COLOR_GOOD_DEEP      = '#166534'   # deep green — high-contrast text on light backgrounds
-COLOR_GOOD_MEDIUM    = '#bbf7d0'   # pale green highlight / chip background
-COLOR_BRAND          = '#378ADD'   # IBKR-style blue — links, primary actions
+# Semantic tones — CSS custom properties so dark mode can provide brighter
+# variants without touching every callback. Light-mode values live in :root
+# in custom.css; [data-theme="dark"] overrides them there.
+COLOR_GOOD           = 'var(--clr-good)'      # green — positive P&L, "fairly valued"
+COLOR_GOOD_SOFT      = '#22c55e'               # lighter green for secondary good states
+COLOR_GOOD_BG        = 'var(--clr-good-bg)'   # pale green panel background
+COLOR_WARN           = 'var(--clr-warn)'       # amber — warnings, "running hot"
+COLOR_WARN_SOFT      = '#f97316'               # orange, stronger warn
+COLOR_WARN_YELLOW    = '#eab308'               # yellow — mid-warn zone
+COLOR_WARN_BG        = '#fffbeb'               # pale amber — also used by export.py (keep as hex)
+COLOR_WARN_BORDER    = '#fde68a'               # amber border — also used by export.py (keep as hex)
+COLOR_WARN_DEEP      = '#92400e'               # deep amber — also used by export.py (keep as hex)
+COLOR_BAD            = 'var(--clr-bad)'        # red — negative P&L, overvalued
+COLOR_BAD_DEEP       = '#991b1b'               # deep red — used by export.py (keep as hex)
+COLOR_BAD_BG         = 'var(--clr-bad-bg)'    # pale red panel background
+COLOR_GOOD_DEEP      = '#166534'               # deep green — used by export.py (keep as hex)
+COLOR_GOOD_MEDIUM    = 'var(--clr-good-medium)'  # pale green highlight / chip background
+COLOR_BRAND          = '#378ADD'               # IBKR-style blue — links, primary actions
 COLOR_BRAND_BORDER   = '#cfe0f5'
 
-# Neutrals (text and surface)
-COLOR_TEXT_STRONG    = '#111'      # primary headings / totals
-COLOR_TEXT           = '#333'
-COLOR_TEXT_SLATE     = '#374151'   # tailwind gray-700
-COLOR_TEXT_MID       = '#555'      # secondary text
-COLOR_TEXT_DIM       = '#666'      # table headers, labels
-COLOR_TEXT_MUTED     = '#888'      # tertiary / hint text
-COLOR_TEXT_SEMI      = '#777'      # between mid and muted
-COLOR_TEXT_FAINT     = '#999'
-COLOR_TEXT_GHOST     = '#bbb'      # disabled, placeholder
-COLOR_SURFACE_WHITE  = '#fff'
-COLOR_SURFACE_SOFT   = '#fafafa'
-COLOR_SURFACE        = '#f5f5f5'
-COLOR_BORDER_LIGHT   = '#f0f0f0'
-COLOR_BORDER         = '#ebebeb'
-COLOR_BORDER_MID     = '#e5e7eb'
-COLOR_BORDER_STRONG  = '#e0e0e0'
-COLOR_BORDER_HEAVY   = '#ddd'
+# Neutrals (text and surface) — CSS custom properties so dark mode works via
+# [data-theme="dark"] overrides in custom.css without touching every callback.
+COLOR_TEXT_STRONG    = 'var(--clr-text-strong)'
+COLOR_TEXT           = 'var(--clr-text)'
+COLOR_TEXT_SLATE     = 'var(--clr-text-slate)'
+COLOR_TEXT_MID       = 'var(--clr-text-mid)'
+COLOR_TEXT_DIM       = 'var(--clr-text-dim)'
+COLOR_TEXT_MUTED     = 'var(--clr-text-muted)'
+COLOR_TEXT_SEMI      = 'var(--clr-text-semi)'
+COLOR_TEXT_FAINT     = 'var(--clr-text-faint)'
+COLOR_TEXT_GHOST     = 'var(--clr-text-ghost)'
+COLOR_SURFACE_WHITE  = 'var(--clr-surface-white)'
+COLOR_SURFACE_SOFT   = 'var(--clr-surface-soft)'
+COLOR_SURFACE        = 'var(--clr-surface)'
+COLOR_BORDER_LIGHT   = 'var(--clr-border-light)'
+COLOR_BORDER         = 'var(--clr-border)'
+COLOR_BORDER_MID     = 'var(--clr-border-mid)'
+COLOR_BORDER_STRONG  = 'var(--clr-border-strong)'
+COLOR_BORDER_HEAVY   = 'var(--clr-border-heavy)'
 
 
 # ── Card containers ───────────────────────────────────────────────────────────

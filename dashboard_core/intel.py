@@ -28,6 +28,7 @@ from net_util import run_parallel
 from styles import (
     CARD,
     COLOR_BAD,
+    COLOR_BORDER_LIGHT,
     COLOR_BRAND,
     COLOR_GOOD_SOFT,
     COLOR_SURFACE_WHITE,
@@ -230,9 +231,10 @@ def _render_sector_geo_inner(intel, port_data, status=''):
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         height=200,
         annotations=[dict(
-            text=(f"<span style='font-size:18px;color:#111;font-weight:600'>"
+            text=(f"<span style='font-size:18px;"
+                  f"color:var(--clr-text-strong);font-weight:600'>"
                   f"{center_val}</span><br>"
-                  f"<span style='font-size:11px;color:#888;"
+                  f"<span style='font-size:11px;color:var(--clr-text-muted);"
                   f"letter-spacing:0.05em;text-transform:uppercase'>Portfolio</span>"),
             x=0.5, y=0.5, showarrow=False, align='center',
         )],
@@ -299,7 +301,7 @@ def _render_sector_geo_inner(intel, port_data, status=''):
                                            'fontSize': '15px', 'color': COLOR_TEXT_MID}),
             html.Td(tickers_str, style={'padding': '6px 0', 'fontSize': '14px',
                                          'color': COLOR_TEXT_MUTED}),
-        ], style={'borderTop': '0.5px solid #f5f5f5'}))
+        ], style={'borderTop': f'0.5px solid {COLOR_BORDER_LIGHT}'}))
 
     sector_legend = html.Table(
         [html.Tbody(legend_rows)],
@@ -329,10 +331,6 @@ def _render_sector_geo_inner(intel, port_data, status=''):
             ], style={'flex': '1', 'minWidth': '240px'}),
         ], style={'display': 'flex', 'gap': '24px', 'flexWrap': 'wrap',
                   'alignItems': 'flex-start', 'marginBottom': '8px'}),
-
-        # ── Divider ───────────────────────────────────────────────────────────
-        html.Hr(style={'border': 'none', 'borderTop': '0.5px solid #f0f0f0',
-                       'margin': '8px 0 0'}),
 
         # ── Full-width breakdown table ────────────────────────────────────────
         sector_legend,
@@ -402,8 +400,8 @@ def _render_earnings_inner(intel, port_data, status=''):
             days_str  = f'in {days}d'
             days_color = COLOR_BAD if imminent else (COLOR_WARN if soon else COLOR_TEXT_MUTED)
 
-        weight_str = f"{r['weight']:.1f}%"
-        row_bg     = '#fff8f0' if imminent else 'transparent'
+        weight_str  = f"{r['weight']:.1f}%"
+        row_class   = 'earnings-row-imminent' if imminent else ''
 
         table_rows.append(html.Tr([
             td_l(html.Span(r['ticker'], style={'fontWeight': '600'})),
@@ -411,8 +409,8 @@ def _render_earnings_inner(intel, port_data, status=''):
             td_r(days_str,       color=days_color,
                  fontWeight='600' if imminent else '400'),
             td_r(weight_str,     color=COLOR_TEXT_MID),
-        ], style={'borderTop': '0.5px solid #f5f5f5',
-                  'backgroundColor': row_bg}))
+        ], className=row_class,
+           style={'borderTop': f'0.5px solid {COLOR_BORDER_LIGHT}'}))
 
     cols = ['Ticker', 'Earnings Date', 'When', 'Weight']
     header = html.Tr([

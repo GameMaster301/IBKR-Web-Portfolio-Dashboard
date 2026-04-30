@@ -8,6 +8,9 @@ from dashboard_core.helpers import section_label
 from styles import (
     CARD,
     COLOR_BAD,
+    COLOR_BORDER,
+    COLOR_BORDER_HEAVY,
+    COLOR_BORDER_LIGHT,
     COLOR_SURFACE,
     COLOR_SURFACE_WHITE,
     COLOR_TEXT_MID,
@@ -42,8 +45,14 @@ def build_layout(refresh_ms: int) -> html.Div:
                     ),
                     html.Button("↓ PDF", id='export-pdf-btn', n_clicks=0, style={
                         'fontSize': '13px', 'color': COLOR_TEXT_MID, 'background': COLOR_SURFACE,
-                        'border': '0.5px solid #ddd', 'borderRadius': '8px',
+                        'border': f'0.5px solid {COLOR_BORDER_HEAVY}', 'borderRadius': '8px',
                         'padding': '6px 14px', 'cursor': 'pointer',
+                    }),
+                    html.Button("🌙", id='theme-toggle-btn', n_clicks=0, style={
+                        'fontSize': '16px', 'background': 'none',
+                        'border': f'0.5px solid {COLOR_BORDER_HEAVY}', 'borderRadius': '8px',
+                        'padding': '4px 10px', 'cursor': 'pointer', 'lineHeight': '1',
+                        'color': COLOR_TEXT_STRONG,
                     }),
                 ], id='header-actions', style={'display': 'flex', 'alignItems': 'center', 'gap': '12px'}),
             ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-start'}),
@@ -54,7 +63,7 @@ def build_layout(refresh_ms: int) -> html.Div:
             'paddingLeft': '64px', 'paddingRight': '64px',
             'paddingTop': '24px', 'paddingBottom': '17px',
             'marginBottom': '28px',
-            'borderBottom': '0.5px solid #ebebeb',
+            'borderBottom': f'0.5px solid {COLOR_BORDER}',
         }),
 
         # Status / loading banner
@@ -123,22 +132,22 @@ def build_layout(refresh_ms: int) -> html.Div:
 
             html.Div(id='sector-geo-section', style={
                 'marginTop': '40px', 'paddingTop': '32px',
-                'borderTop': '0.5px solid #f0f0f0',
+                'borderTop': f'0.5px solid {COLOR_BORDER_LIGHT}',
             }),
 
             html.Div(id='earnings-section', style={
                 'marginTop': '32px', 'paddingTop': '28px',
-                'borderTop': '0.5px solid #f0f0f0',
+                'borderTop': f'0.5px solid {COLOR_BORDER_LIGHT}',
             }),
 
             html.Div(id='dividend-section', style={
                 'marginTop': '32px', 'paddingTop': '28px',
-                'borderTop': '0.5px solid #f0f0f0',
+                'borderTop': f'0.5px solid {COLOR_BORDER_LIGHT}',
             }),
 
             html.Div(id='market-valuation-section', style={
                 'marginTop': '32px', 'paddingTop': '28px',
-                'borderTop': '0.5px solid #f0f0f0',
+                'borderTop': f'0.5px solid {COLOR_BORDER_LIGHT}',
             }),
 
         ], id='main-content-area'),
@@ -175,11 +184,13 @@ def build_layout(refresh_ms: int) -> html.Div:
         dcc.Store(id='coach-chat-history', data=[]),
         dcc.Store(id='coach-prefill', data=''),
         dcc.Store(id='coach-pending-q', data=None),
+        dcc.Store(id='coach-key-status', data=None),
         dcc.Store(id='coach-copy-signal', data=0),
         dcc.Store(id='coach-scroll-signal', data=0),
         dcc.Store(id='position-detail-scroll-signal', data=0),
         dcc.Store(id='fund-view-mode', data='grid'),
         dcc.Store(id='coach-panel-scroll-signal', data=0),
+        dcc.Store(id='theme-mode', storage_type='local', data='light'),
 
     ], id='app-root', style={
         'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
