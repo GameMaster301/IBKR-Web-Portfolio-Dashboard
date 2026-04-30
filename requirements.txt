@@ -1,4 +1,4 @@
-# Pinned to known-good ranges for Python 3.11 (CI target).
+# Pinned to known-good ranges for Python 3.12 (CI target).
 # Major versions are locked; patch updates allowed.
 # yfinance is pinned tighter because its API changes frequently.
 
@@ -7,6 +7,7 @@ pandas>=2.2,<3
 numpy>=1.26,<3
 plotly>=5.20,<7
 dash>=2.18,<4
+requests>=2.28,<3
 reportlab>=4.0,<5
 yfinance~=0.2.40
 pyyaml>=6.0,<7

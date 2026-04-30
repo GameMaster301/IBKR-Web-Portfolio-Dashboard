@@ -15,7 +15,7 @@ services:
       # host.docker.internal resolves to the host on Docker Desktop (Mac/Win).
       # On Linux set IBKR_HOST to your actual LAN IP (e.g. 192.168.1.x).
       IBKR_HOST: ${IBKR_HOST:-host.docker.internal}
-      IBKR_PORT: ${IBKR_PORT:-7497}
+      IBKR_PORT: ${IBKR_PORT:-4002}
       IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-10}
       IBKR_READONLY: ${IBKR_READONLY:-true}
       IBKR_RECONNECT_DELAY: ${IBKR_RECONNECT_DELAY:-5}
