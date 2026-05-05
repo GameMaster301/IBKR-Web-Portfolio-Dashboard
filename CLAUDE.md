@@ -14,7 +14,15 @@ docker compose up --build -d
 docker compose logs -f dashboard
 ```
 
-There are no tests or linting commands configured. The app is validated by running it.
+```bash
+# Lint (ruff) — same check CI runs
+ruff check .
+
+# Smoke test — no network, no IB required, runs in < 2 s
+python smoke_test.py
+```
+
+CI (`checks.yml`) runs both on every push to `main` and on pull requests. For a quick sanity check without starting the full app, `smoke_test.py` exercises the pure data-transform functions against the demo payload.
 
 **IB Gateway prerequisite:** IB Gateway must be running with API enabled (Configure → Settings → API → Settings → Enable ActiveX and Socket Clients). Default port is **4002** (paper) or **4001** (live). TWS also works — use port 7497 (paper) or 7496 (live) and update `IBKR_PORT` accordingly.
 
@@ -113,6 +121,10 @@ All four are single-word assignments (bool / float / tuple / None), safe under t
 | `net_util.py` | Shared network helpers: `fetch_with_retry` (exponential back-off), `fetch_parallel` (one fn × many items), `run_parallel` (many fns × one call). Used by `analytics`, `market_intel`, and `market_valuation` to keep timeout, retry, and concurrency policy consistent. |
 | `health.py` | Flask route `GET /health` — returns `200 ok` when connected or in demo mode, `503 degraded` otherwise. Registered on the Flask server Dash wraps via `health.register(app.server)` in `dashboard.py`. |
 | `config.py` | Merges `config.yaml` defaults → env var overrides, exposes `cfg` dict |
+| `demo_data.py` | Deterministic mock portfolio in the exact shape of `fetch_all_data()`. Uses real tickers (AAPL, NVDA, ASML, …) so yfinance lookups work in demo mode. |
+| `schemas.py` | TypedDict definitions for all `dcc.Store` payloads (`PositionData`, `SummaryData`, `AccountData`, …). Acts as the contract between store producers and rendering callbacks. |
+| `decorators.py` | `@safe_render` error boundary for Dash render callbacks; raises `NotReadyError` when upstream stores aren't ready yet, preventing 500 errors during startup. |
+| `smoke_test.py` | Fast (< 2 s) sanity check — runs pure data-transform functions against the demo payload; no network or IB connection required. Integrated into CI. |
 
 ### Key Dash patterns used
 
@@ -153,6 +165,8 @@ restarts. Falls back to an in-memory TTL dict if `diskcache` fails to import.
 5. If it needs new IBKR data, add the fetch to `_do_fetch()` in `ibkr_client.py` and include it in the returned dict.
 
 ## CI / Docker Hub publishing
+
+**On every push to `main` and on pull requests:** `.github/workflows/checks.yml` installs deps, runs `ruff check .`, and runs `smoke_test.py`. This is the linting + fast-test gate.
 
 **On every push to `main`:** `.github/workflows/docker-publish.yml` builds a multi-platform image (`linux/amd64` + `linux/arm64`) and pushes it to Docker Hub as `gamemaster301/ibkrdash:latest`.
 

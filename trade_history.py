@@ -51,42 +51,55 @@ def _safe_float(v, default=0.0):
         return default
 
 
-def parse_activity_csv(content: bytes) -> list:
+def parse_activity_csv(content: bytes) -> list | None:
     """
     Parse IBKR Activity Statement / Trade Confirmation CSV into normalized
     trade dicts.  The CSV is multi-section (each section has its own header
     row starting with 'Header'); we only extract rows where the first column
     is 'Trades' and the DataDiscriminator is 'Order' or 'Trade'.
+
+    Returns None when the file doesn't look like an IBKR Activity Statement
+    (no Trades section found), [] when it's valid but has no qualifying trades,
+    or a non-empty list of trade dicts.
     """
     try:
-        text = content.decode('utf-8-sig', errors='replace')
+        text = content.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        try:
+            text = content.decode('latin-1')  # IBKR occasionally exports latin-1
+        except Exception as e:
+            log.warning('CSV decode error: %s', e)
+            return None
     except Exception as e:
         log.warning('CSV decode error: %s', e)
-        return []
+        return None
 
     trades = []
     reader = csv.reader(StringIO(text))
     header: list | None = None
+    found_trades_section = False
 
     for row in reader:
         if not row or row[0] != 'Trades':
             continue
         if len(row) >= 2 and row[1] == 'Header':
             header = row
+            found_trades_section = True
             continue
         if len(row) < 2 or row[1] != 'Data' or not header:
             continue
 
         d = dict(zip(header, row, strict=False))
         disc = (d.get('DataDiscriminator') or '').strip()
-        if disc and disc not in ('Order', 'Trade'):
-            continue   # skip SubTotal / Total rows
+        if disc not in ('Order', 'Trade'):
+            continue   # skip SubTotal / Total / empty-discriminator rows
 
         symbol = (d.get('Symbol') or '').strip()
         qty    = _safe_float(d.get('Quantity'))
         price  = _safe_float(d.get('T. Price') or d.get('Trade Price'))
         dt     = _parse_dt(d.get('Date/Time'))
         if not (symbol and qty and price and dt):
+            log.debug('Skipping row — missing field(s): symbol=%r qty=%r price=%r dt=%r', symbol, qty, price, dt)
             continue
         side = 'BUY' if qty > 0 else 'SELL'
         trades.append({
@@ -98,6 +111,8 @@ def parse_activity_csv(content: bytes) -> list:
             'value':  round(abs(qty) * price, 2),
             'source': 'csv',
         })
+    if not found_trades_section:
+        return None
     return trades
 
 

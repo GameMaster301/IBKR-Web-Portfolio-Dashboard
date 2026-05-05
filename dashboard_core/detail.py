@@ -1058,6 +1058,12 @@ def register(app):
             'animation': 'slideInDown 0.25s ease-out',
         })
 
+    def _status(msg, color):
+        return html.Span(msg, style={'color': color, 'fontWeight': '500'})
+
+    def _broadcast(msg, color, ref_list):
+        return [_status(msg, color) for _ in (ref_list or [])]
+
     # ── Per-position CSV trade upload ─────────────────────────────────────────
     # The upload button lives inside the opened position detail card. The user
     # exports a Transaction History CSV from the IBKR Client Portal and drops
@@ -1079,27 +1085,25 @@ def register(app):
         if not contents:
             return no_update, [no_update for _ in (contents_list or [])]
 
-        def _status(msg, color):
-            return html.Span(msg, style={'color': color, 'fontWeight': '500'})
-
         if not (filename or '').lower().endswith('.csv'):
-            return no_update, [_status("Need a .csv file", COLOR_BAD)
-                               for _ in (contents_list or [])]
+            return no_update, _broadcast("Need a .csv file", COLOR_BAD, contents_list)
         try:
             _, b64 = contents.split(',', 1)
             decoded = base64.b64decode(b64)
         except Exception:
-            return no_update, [_status("Could not decode file", COLOR_BAD)
-                               for _ in (contents_list or [])]
+            return no_update, _broadcast("Could not decode file", COLOR_BAD, contents_list)
 
         parsed = parse_activity_csv(decoded)
+        if parsed is None:
+            return no_update, _broadcast(
+                "Doesn't look like an IBKR Activity Statement — "
+                "export from Client Portal → Reports → Activity",
+                COLOR_BAD, contents_list)
         if not parsed:
-            return no_update, [_status("No trades found in CSV", COLOR_WARN)
-                               for _ in (contents_list or [])]
+            return no_update, _broadcast("No trades found in CSV", COLOR_WARN, contents_list)
 
         merged = save_uploaded_trades(parsed)
-        msg = f"{len(parsed)} parsed · {len(merged)} total stored"
-        return merged, [_status(msg, COLOR_GOOD) for _ in (contents_list or [])]
+        return merged, _broadcast(f"{len(parsed)} parsed · {len(merged)} total stored", COLOR_GOOD, contents_list)
 
     @app.callback(
         Output('uploaded-trades', 'data', allow_duplicate=True),
@@ -1113,5 +1117,4 @@ def register(app):
         if not any(n_clicks_list or []):
             return no_update, [no_update for _ in (n_clicks_list or [])]
         cleared = clear_uploaded_trades()
-        msg = html.Span("Trade history deleted", style={'color': COLOR_WARN, 'fontWeight': '500'})
-        return cleared, [msg for _ in (n_clicks_list or [])]
+        return cleared, _broadcast("Trade history deleted", COLOR_WARN, n_clicks_list)

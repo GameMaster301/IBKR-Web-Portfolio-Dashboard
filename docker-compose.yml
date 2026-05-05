@@ -25,6 +25,8 @@ services:
       DASH_PORT: 8050
       REFRESH_INTERVAL: ${REFRESH_INTERVAL:-60}
       OPEN_BROWSER: "0"
+      # Set DEMO_MODE=1 in .env to run without an IBKR connection
+      DEMO_MODE: ${DEMO_MODE:-0}
 
     restart: unless-stopped
 

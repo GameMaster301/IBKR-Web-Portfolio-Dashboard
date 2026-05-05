@@ -144,10 +144,10 @@ def register(app):
     }
 
     _STARTER_PROMPTS = [
-        "Portfolio health check in 5 bullet points.",
-        "What would a conservative investor change here?",
-        "Where would you put €500 more today?",
-        "Three realistic risks in the next 12 months?",
+        "Portfolio health check — strengths, risks, and one thing to fix.",
+        "Am I over-concentrated? Where is my real exposure?",
+        "Where would you put €500 more given what I already hold?",
+        "What would a fund manager cut from this portfolio first, and why?",
     ]
 
 
@@ -440,7 +440,8 @@ def register(app):
 
             if not key:
                 history.append({'q': question,
-                                'a': "No API key saved. Paste one to enable chat.",
+                                'a': "No API key saved. Switch to the AI tab and paste a key "
+                                     "(Anthropic / OpenAI / xAI) — it stays in your browser only.",
                                 'error': True})
                 return _commit_and_return(history)
 
@@ -1015,6 +1016,9 @@ def register(app):
         elif not key_present:
             # ── AI mode without key: key-entry form ───────────────────────────────
             key_err = (key_status or {}).get('error')
+            _link_style = {
+                'color': '#6366f1', 'textDecoration': 'none', 'fontWeight': '500',
+            }
             children.append(html.Div([
                 html.Div([
                     dcc.Input(
@@ -1030,9 +1034,18 @@ def register(app):
                 html.Div(key_err, style={
                     'fontSize': '12px', 'color': '#ef4444',
                     'margin': '6px 0 0', 'lineHeight': '1.5',
-                }) if key_err else html.P("Stored in your browser only — never uploaded.",
-                       style={'color': COLOR_TEXT_FAINT, 'fontSize': '12px',
-                              'margin': '6px 0 0', 'lineHeight': '1.5'}),
+                }) if key_err else html.Div([
+                    html.Span("Stored in your browser only — never uploaded.  Get a free key: ",
+                              style={'color': COLOR_TEXT_FAINT, 'fontSize': '12px'}),
+                    html.A("Anthropic", href="https://console.anthropic.com/", target="_blank",
+                           style=_link_style),
+                    html.Span(" · ", style={'color': COLOR_TEXT_FAINT, 'fontSize': '12px'}),
+                    html.A("OpenAI", href="https://platform.openai.com/api-keys", target="_blank",
+                           style=_link_style),
+                    html.Span(" · ", style={'color': COLOR_TEXT_FAINT, 'fontSize': '12px'}),
+                    html.A("xAI", href="https://console.x.ai/", target="_blank",
+                           style=_link_style),
+                ], style={'margin': '6px 0 0', 'lineHeight': '1.5'}),
             ]))
             children.append(html.Div([
                 html.Button(id='coach-clear-key-btn',   style={'display': 'none'}),

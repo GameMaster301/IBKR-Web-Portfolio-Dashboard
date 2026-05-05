@@ -3,11 +3,33 @@
 A real-time, private portfolio dashboard for Interactive Brokers — built with Python and Plotly Dash. Connects directly to **IB Gateway or TWS** via the `ib_async` API. No third-party data providers for live prices, no delays, read-only.
 
 [![checks](https://github.com/GameMaster301/IBKR-Web-Portfolio-Dashboard/actions/workflows/checks.yml/badge.svg)](https://github.com/GameMaster301/IBKR-Web-Portfolio-Dashboard/actions/workflows/checks.yml)
+[![Docker Hub](https://img.shields.io/docker/pulls/gamemaster301/ibkrdash?logo=docker&logoColor=white&label=Docker+Hub)](https://hub.docker.com/r/gamemaster301/ibkrdash)
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat&logo=python&logoColor=white)
 ![Dash](https://img.shields.io/badge/Plotly_Dash-2.x-119DFF?style=flat&logo=plotly&logoColor=white)
 ![ib_async](https://img.shields.io/badge/ib__async-latest-orange?style=flat)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat&logo=docker&logoColor=white)
+![AI](https://img.shields.io/badge/AI-Anthropic_%7C_OpenAI_%7C_xAI-8b5cf6?style=flat)
 ![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat)
+
+---
+
+## Try it instantly — no IBKR account needed
+
+```bash
+docker run --rm -e DEMO_MODE=1 -p 8050:8050 gamemaster301/ibkrdash:latest
+```
+
+Then open **http://localhost:8050**. Loads a realistic sample portfolio with live yfinance prices — every feature works, no brokerage connection required.
+
+---
+
+## Screenshots
+
+<!-- Add a GIF or screenshot here. Recommended: record a 20-30 second screen capture
+     of the demo dashboard (Holdings → click a position → open the Coach panel)
+     and drop it here as a .gif or link an image URL. -->
+
+> _Screenshots coming soon — launch with `DEMO_MODE=1` to explore live._
 
 ---
 
