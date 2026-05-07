@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
@@ -71,7 +71,7 @@ def register(app):
         return {
             'id':      uuid.uuid4().hex[:12],
             'title':   _thread_title(h),
-            'created': datetime.now(datetime.UTC).isoformat(),
+            'created': datetime.now(timezone.utc).isoformat(),
             'history': h,
         }
 
@@ -395,9 +395,14 @@ def register(app):
         if not q:
             return noop
 
-        # Starters and follow-up chips just pre-fill the input — let the user send.
-        if isinstance(trig, dict) and trig.get('type') in ('coach-starter', 'coach-followup'):
-            return no_update, q, False, False, "Send ↑"
+        # Starter cards pre-fill the input so the user can review and hit Send.
+        # Follow-up chips send immediately.
+        if isinstance(trig, dict):
+            t = trig.get('type')
+            if t == 'coach-starter':
+                return no_update, q, False, False, "Send ↑"
+            if t == 'coach-followup':
+                return q, '', True, True, "Sending…"
 
         # Set pending-q → triggers run_llm via its Input. Disable input/button
         # while the request is in flight; run_llm re-enables them on completion.
@@ -846,21 +851,6 @@ def register(app):
     # switches to AI mode, and pre-fills the input with a specific, actionable
     # question about the ticker so the user can send immediately or lightly edit.
 
-    _ASK_COACH_TEMPLATE = (
-        "Analyse my {ticker} position: is my position size appropriate given my "
-        "overall portfolio, what are the main risks to watch, and does anything "
-        "about the current valuation stand out?"
-    )
-
-    # Alternative templates — swap into _ASK_COACH_TEMPLATE if preferred:
-    #   "What should I know about {ticker} right now? Cover the thesis, any recent"
-    #   " news worth flagging, and how it fits with my other holdings."
-    #
-    #   "Give me a quick {ticker} health check: recent performance, fundamentals,"
-    #   " and whether I should consider trimming, holding, or adding."
-    #
-    #   "Explain {ticker} to me like I'm new to investing — what does the company"
-    #   " do, why might someone hold it, and what are the biggest risks?"
 
 
     @app.callback(
@@ -874,7 +864,7 @@ def register(app):
     def ask_coach_about_position(clicks, ticker):
         if not any(clicks or []) or not ticker:
             return no_update, no_update, no_update
-        return True, 'ai', _ASK_COACH_TEMPLATE.format(ticker=ticker)
+        return True, 'ai', ''
 
 
     def _mode_btn_style(active: bool) -> dict:
@@ -1016,9 +1006,6 @@ def register(app):
         elif not key_present:
             # ── AI mode without key: key-entry form ───────────────────────────────
             key_err = (key_status or {}).get('error')
-            _link_style = {
-                'color': '#6366f1', 'textDecoration': 'none', 'fontWeight': '500',
-            }
             children.append(html.Div([
                 html.Div([
                     dcc.Input(
@@ -1034,18 +1021,10 @@ def register(app):
                 html.Div(key_err, style={
                     'fontSize': '12px', 'color': '#ef4444',
                     'margin': '6px 0 0', 'lineHeight': '1.5',
-                }) if key_err else html.Div([
-                    html.Span("Stored in your browser only — never uploaded.  Get a free key: ",
-                              style={'color': COLOR_TEXT_FAINT, 'fontSize': '12px'}),
-                    html.A("Anthropic", href="https://console.anthropic.com/", target="_blank",
-                           style=_link_style),
-                    html.Span(" · ", style={'color': COLOR_TEXT_FAINT, 'fontSize': '12px'}),
-                    html.A("OpenAI", href="https://platform.openai.com/api-keys", target="_blank",
-                           style=_link_style),
-                    html.Span(" · ", style={'color': COLOR_TEXT_FAINT, 'fontSize': '12px'}),
-                    html.A("xAI", href="https://console.x.ai/", target="_blank",
-                           style=_link_style),
-                ], style={'margin': '6px 0 0', 'lineHeight': '1.5'}),
+                }) if key_err else html.Div(
+                    "Stored in your browser only — never uploaded.",
+                    style={'color': COLOR_TEXT_FAINT, 'fontSize': '12px', 'margin': '6px 0 0'},
+                ),
             ]))
             children.append(html.Div([
                 html.Button(id='coach-clear-key-btn',   style={'display': 'none'}),

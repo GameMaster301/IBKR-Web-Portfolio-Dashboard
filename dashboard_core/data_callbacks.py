@@ -10,6 +10,7 @@ close) since both shortcuts target IDs that this module already manages.
 
 from __future__ import annotations
 
+import concurrent.futures
 import time
 from datetime import datetime
 
@@ -148,12 +149,21 @@ def register(app):
         if df.empty:
             return {}, 'no_positions'
         summary = get_summary(df)
-        # IBKR tick-59 data first; yfinance fills any gaps
+        # IBKR tick-59 data first; yfinance fills any gaps.
+        # Run with a 2 s timeout so a slow Yahoo Finance response doesn't block
+        # the portfolio-data store.  The background thread keeps running and
+        # populates the 4-hour cache, so the next 60 s tick picks it up.
         div_data = raw.get('div_data', {})
         tickers  = [p['ticker'] for p in raw['positions']]
         missing  = [t for t in tickers if t not in div_data]
         if missing:
-            div_data.update(get_dividend_data_yf(missing))
+            _ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex.submit(get_dividend_data_yf, missing)
+            _ex.shutdown(wait=False)
+            try:
+                div_data.update(_fut.result(timeout=2.0))
+            except Exception:
+                pass
         return {
             'positions': df.to_dict('records'),
             'summary':   summary,

@@ -376,7 +376,14 @@ class _IBKRConnection:
                     ib.reqMktData(c, genericTickList='59,165', snapshot=False)
                     for c in contracts
                 ]
-                await asyncio.sleep(1.5)
+                # Poll in 0.1 s steps up to 1.5 s; exit early once every ticker
+                # has received its 52-week range tick (tick 165).  Stocks with no
+                # 52w data from IBKR will always be NaN — we fall through the
+                # full 1.5 s for those, same as before.
+                for _ in range(15):
+                    await asyncio.sleep(0.1)
+                    if all(t.low52week == t.low52week for t in div_tickers):
+                        break
                 div_result   = {}
                 range_result = {}
                 for t in div_tickers:
@@ -449,7 +456,11 @@ class _IBKRConnection:
             try:
                 acct_name = av[0].account if av else ''
                 pnl_obj   = ib.reqPnL(acct_name)
-                await asyncio.sleep(0.5)
+                # Poll in 0.05 s steps up to 0.5 s; exit as soon as dailyPnL arrives.
+                for _ in range(10):
+                    await asyncio.sleep(0.05)
+                    if pnl_obj.dailyPnL == pnl_obj.dailyPnL:  # not NaN
+                        break
                 result = round(pnl_obj.dailyPnL, 2) if pnl_obj.dailyPnL == pnl_obj.dailyPnL else 0.0
                 ib.cancelPnL(acct_name)
                 log.debug("Daily P&L: %.2f", result)
