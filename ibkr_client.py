@@ -527,6 +527,7 @@ _conn = _IBKRConnection()
 # mock payload instead of talking to TWS. Toggled at startup via DEMO_MODE env
 # var or at runtime from the dashboard UI.
 _demo_mode = False
+_demo_portfolio_id = 'balanced'  # active demo portfolio; see demo_data.DEMO_PORTFOLIOS
 _conn_params: dict | None = None   # saved at startup; used by ensure_connection_started()
 
 
@@ -537,6 +538,17 @@ def set_demo_mode(on: bool) -> None:
 
 def is_demo_mode() -> bool:
     return _demo_mode
+
+
+def set_demo_portfolio(portfolio_id: str) -> None:
+    """Switch which sample portfolio demo mode serves. Single-word assignment,
+    GIL-safe — same lock-free pattern as `_demo_mode`."""
+    global _demo_portfolio_id
+    _demo_portfolio_id = str(portfolio_id)
+
+
+def get_demo_portfolio() -> str:
+    return _demo_portfolio_id
 
 
 def save_connection_params(host='127.0.0.1', port=4002, client_id=1,
@@ -585,7 +597,7 @@ def ensure_connection_started():
 def fetch_all_data() -> dict | None:
     if _demo_mode:
         from demo_data import build_demo_payload
-        return build_demo_payload()
+        return build_demo_payload(_demo_portfolio_id)
     return _conn.fetch_all_data()
 
 

@@ -14,12 +14,13 @@ import concurrent.futures
 import time
 from datetime import datetime
 
-from dash import Input, Output, State, html, no_update
+from dash import ALL, Input, Output, State, ctx, html, no_update
 
 from analytics import get_dividend_data_yf
 from config import cfg
 from dashboard_core.helpers import badge, status_banner
 from data_processor import get_summary, process_positions
+from demo_data import DEMO_PORTFOLIOS
 from ibkr_client import (
     connection_attempt,
     connection_status,
@@ -27,6 +28,7 @@ from ibkr_client import (
     fetch_all_data,
     is_demo_mode,
     set_demo_mode,
+    set_demo_portfolio,
 )
 from styles import (
     COLOR_BAD,
@@ -303,6 +305,69 @@ def register(app):
             return no_update, no_update
         set_demo_mode(False)
         return (cur or 0) + 1, connection_status()
+
+    # ── Demo portfolio switcher ───────────────────────────────────────────────
+    # Renders 3 pill buttons next to the "Sample portfolio" title (only while
+    # demo mode is on). Active pill is highlighted; clicking another pill
+    # swaps the active portfolio and triggers an immediate refresh by bumping
+    # kb-refresh-btn — the same trick the demo-toggle buttons use.
+    @app.callback(
+        Output('demo-portfolio-switcher', 'children'),
+        Output('demo-portfolio-switcher', 'style'),
+        Input('connection-status', 'data'),
+        Input('demo-portfolio-id', 'data'),
+    )
+    def render_demo_switcher(_status, active_id):
+        if not is_demo_mode():
+            return [], {'display': 'none'}
+        active_id = active_id or 'balanced'
+        pills = []
+        for p in DEMO_PORTFOLIOS:
+            is_active = p['id'] == active_id
+            pills.append(html.Button(
+                p['name'],
+                id={'type': 'demo-portfolio-btn', 'index': p['id']},
+                n_clicks=0,
+                title=p['description'],
+                style={
+                    'fontSize':     '12px',
+                    'fontWeight':   '600' if is_active else '500',
+                    'color':        COLOR_WARN_DEEP if is_active else COLOR_TEXT_MUTED,
+                    'background':   COLOR_WARN_BG  if is_active else COLOR_SURFACE,
+                    'border':       f"0.5px solid {COLOR_WARN_BORDER if is_active else COLOR_BORDER}",
+                    'borderRadius': '999px',
+                    'padding':      '4px 12px',
+                    'cursor':       'pointer',
+                    'lineHeight':   '1.4',
+                },
+            ))
+        return pills, {
+            'display':    'inline-flex',
+            'gap':        '6px',
+            'alignItems': 'center',
+        }
+
+    @app.callback(
+        Output('demo-portfolio-id', 'data'),
+        Output('kb-refresh-btn', 'n_clicks', allow_duplicate=True),
+        Input({'type': 'demo-portfolio-btn', 'index': ALL}, 'n_clicks'),
+        State('demo-portfolio-id', 'data'),
+        State('kb-refresh-btn', 'n_clicks'),
+        prevent_initial_call=True,
+    )
+    def select_demo_portfolio(n_clicks_list, current_id, cur_refresh):
+        # Pattern-match callback fires on initial render with all-zero clicks;
+        # ignore unless an actual click happened.
+        if not any(n_clicks_list or []):
+            return no_update, no_update
+        trig = ctx.triggered_id
+        if not isinstance(trig, dict):
+            return no_update, no_update
+        new_id = trig.get('index')
+        if not new_id or new_id == current_id:
+            return no_update, no_update
+        set_demo_portfolio(new_id)
+        return new_id, (cur_refresh or 0) + 1
 
     # ── Dark mode toggle ──────────────────────────────────────────────────────
     # Restore stored theme on page load: sets data-theme on <html> and shows

@@ -29,7 +29,10 @@ def build_layout(refresh_ms: int) -> html.Div:
         html.Div([
             html.Div([
                 html.Div([
-                    html.H1(id='portfolio-title', style={'margin': '0', 'fontSize': '22px', 'fontWeight': '600', 'color': COLOR_TEXT_STRONG}),
+                    html.Div([
+                        html.H1(id='portfolio-title', style={'margin': '0', 'fontSize': '22px', 'fontWeight': '600', 'color': COLOR_TEXT_STRONG}),
+                        html.Div(id='demo-portfolio-switcher', style={'display': 'none'}),
+                    ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px', 'flexWrap': 'wrap'}),
                     html.P(id='last-updated', style={'margin': '4px 0 0', 'color': COLOR_TEXT_MUTED, 'fontSize': '14px'}),
                 ]),
                 html.Div([
@@ -191,6 +194,7 @@ def build_layout(refresh_ms: int) -> html.Div:
         dcc.Store(id='fund-view-mode', data='grid'),
         dcc.Store(id='coach-panel-scroll-signal', data=0),
         dcc.Store(id='theme-mode', storage_type='local', data='light'),
+        dcc.Store(id='demo-portfolio-id', data='balanced'),
 
     ], id='app-root', style={
         'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
