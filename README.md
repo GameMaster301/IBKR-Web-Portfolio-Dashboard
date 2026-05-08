@@ -29,7 +29,8 @@ Then open **http://localhost:8050**. Loads a realistic sample portfolio with liv
      of the demo dashboard (Holdings → click a position → open the Coach panel)
      and drop it here as a .gif or link an image URL. -->
 
-> _Screenshots coming soon — launch with `DEMO_MODE=1` to explore live._
+<img width="1905" height="915" alt="screenshot" src="https://github.com/user-attachments/assets/3f49e696-01fe-41e5-a990-1e7b57e3e112" />
+
 
 ---
 
