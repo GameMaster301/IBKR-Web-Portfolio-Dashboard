@@ -25,10 +25,6 @@ Then open **http://localhost:8050**. Loads a realistic sample portfolio with liv
 
 ## Screenshots
 
-<!-- Add a GIF or screenshot here. Recommended: record a 20-30 second screen capture
-     of the demo dashboard (Holdings → click a position → open the Coach panel)
-     and drop it here as a .gif or link an image URL. -->
-
 <img width="1905" height="915" alt="screenshot" src="https://github.com/user-attachments/assets/3f49e696-01fe-41e5-a990-1e7b57e3e112" />
 
 
