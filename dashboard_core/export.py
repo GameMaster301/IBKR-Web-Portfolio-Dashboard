@@ -114,7 +114,32 @@ def register(app):
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
         story.append(t)
-        story.append(Spacer(1, 6*mm))
+        story.append(Spacer(1, 4*mm))
+
+        # Income summary — one-liner showing projected dividends, yield, and
+        # how many holdings actually pay. Hidden when no holdings pay anything.
+        div_data   = data.get('div_data') or {}
+        qty_by_tk  = dict(zip(df['ticker'], df['quantity'], strict=False))
+        annual_usd = sum(
+            qty_by_tk.get(tk, 0) * float(d.get('next_12m') or 0)
+            for tk, d in div_data.items()
+        )
+        if annual_usd > 0 and total_val > 0:
+            annual_base = to_base(annual_usd, rate, base_ccy)
+            yield_pct   = (annual_base / total_val) * 100
+            payers      = sum(1 for d in div_data.values() if (d.get('next_12m') or 0) > 0)
+            total_hold  = len(df)
+            story.append(Paragraph(
+                f"Projected 12-month dividends: <b>{sym}{annual_base:,.0f}</b> &nbsp;·&nbsp; "
+                f"Portfolio yield: <b>{yield_pct:.2f}%</b> &nbsp;·&nbsp; "
+                f"{payers} of {total_hold} holdings pay",
+                ParagraphStyle('income', parent=styles['Normal'], fontSize=9,
+                               textColor=colors.HexColor('#444444'),
+                               backColor=colors.HexColor(_PDF_SURFACE_SOFT),
+                               borderColor=colors.HexColor(_PDF_BORDER),
+                               borderWidth=0.5, borderPadding=6, spaceAfter=6),
+            ))
+        story.append(Spacer(1, 4*mm))
 
         # Best / worst performer callout
         best   = s.get('best_performer', '—')
