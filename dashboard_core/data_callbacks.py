@@ -304,6 +304,7 @@ def register(app):
         if not n:
             return no_update, no_update
         set_demo_mode(False)
+        ensure_connection_started()
         return (cur or 0) + 1, connection_status()
 
     # ── Demo portfolio switcher ───────────────────────────────────────────────
