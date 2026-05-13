@@ -181,6 +181,7 @@ def register(app):
         Output('portfolio-title', 'children'),
         Output('retry-connection-wrap', 'style'),
         Output('exit-demo-wrap', 'style'),
+        Output('export-pdf-wrap', 'style'),
         Input('connection-status', 'data'),
         Input('portfolio-data', 'data'),
     )
@@ -190,6 +191,8 @@ def register(app):
         retry_shown  = {'display': 'block', 'textAlign': 'center', 'marginBottom': '24px'}
         exit_demo_hidden = {'display': 'none'}
         exit_demo_shown  = {'display': 'block'}
+        pdf_hidden = {'display': 'none'}
+        pdf_shown  = {'display': 'block'}
         demo = is_demo_mode()
 
         # status may be 'loading', 'connecting', or 'connecting:N' (N = attempt count)
@@ -234,7 +237,7 @@ def register(app):
             ], style={'textAlign': 'center', 'padding': '52px 40px',
                       'background': COLOR_SURFACE_SOFT, 'borderRadius': '14px',
                       'border': f'0.5px solid {COLOR_BORDER}'})
-            return banner, badge("Connecting...", COLOR_TEXT_MUTED, COLOR_SURFACE, COLOR_BORDER_STRONG), "", "Portfolio", retry_hidden, exit_demo_hidden
+            return banner, badge("Connecting...", COLOR_TEXT_MUTED, COLOR_SURFACE, COLOR_BORDER_STRONG), "", "Portfolio", retry_hidden, exit_demo_hidden, pdf_hidden
 
         if status == 'disconnected':
             return status_banner("🔌", "Not connected to IBKR",
@@ -242,18 +245,18 @@ def register(app):
                                  "IB Gateway: Configure → Settings → API → Settings → Enable ActiveX and Socket Clients (Port 4002 paper / 4001 live).\n"
                                  "TWS: Edit → Global Configuration → API → Settings → Enable ActiveX and Socket Clients (Port 7497 paper / 7496 live).",
                                  COLOR_BAD_BG), \
-                   badge("● Disconnected", COLOR_BAD, COLOR_BAD_BG, '#fecaca'), ts, "Portfolio", retry_shown, exit_demo_hidden
+                   badge("● Disconnected", COLOR_BAD, COLOR_BAD_BG, '#fecaca'), ts, "Portfolio", retry_shown, exit_demo_hidden, pdf_hidden
 
         if status == 'no_positions':
             conn_badge = (badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER, 'badge-warn') if demo
                           else badge("● Connected", COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD_MEDIUM))
             return status_banner("📭", "No positions found",
                                  "Connected to IBKR successfully, but your account has no open positions.", COLOR_SURFACE_SOFT), \
-                   conn_badge, ts, "Sample portfolio" if demo else "Portfolio", retry_hidden, (exit_demo_shown if demo else exit_demo_hidden)
+                   conn_badge, ts, "Sample portfolio" if demo else "Portfolio", retry_hidden, (exit_demo_shown if demo else exit_demo_hidden), pdf_hidden
 
         if demo:
-            return None, badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER, 'badge-warn'), "", "Sample portfolio", retry_hidden, exit_demo_shown
-        return None, badge(f"● Live · {_REFRESH_MS // 1000}s", COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD_MEDIUM), ts, "Portfolio", retry_hidden, exit_demo_hidden
+            return None, badge("● Demo mode", COLOR_WARN_DEEP, COLOR_WARN_BG, COLOR_WARN_BORDER, 'badge-warn'), "", "Sample portfolio", retry_hidden, exit_demo_shown, pdf_shown
+        return None, badge(f"● Live · {_REFRESH_MS // 1000}s", COLOR_GOOD, COLOR_GOOD_BG, COLOR_GOOD_MEDIUM), ts, "Portfolio", retry_hidden, exit_demo_hidden, pdf_shown
 
     @app.callback(
         Output('main-content-area', 'style'),

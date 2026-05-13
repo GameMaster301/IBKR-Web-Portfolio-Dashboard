@@ -46,11 +46,15 @@ def build_layout(refresh_ms: int) -> html.Div:
                         id='exit-demo-wrap',
                         style={'display': 'none'},
                     ),
-                    html.Button("↓ PDF", id='export-pdf-btn', n_clicks=0, style={
-                        'fontSize': '13px', 'color': COLOR_TEXT_MID, 'background': COLOR_SURFACE,
-                        'border': f'0.5px solid {COLOR_BORDER_HEAVY}', 'borderRadius': '8px',
-                        'padding': '6px 14px', 'cursor': 'pointer',
-                    }),
+                    html.Div(
+                        html.Button("↓ PDF", id='export-pdf-btn', n_clicks=0, style={
+                            'fontSize': '13px', 'color': COLOR_TEXT_MID, 'background': COLOR_SURFACE,
+                            'border': f'0.5px solid {COLOR_BORDER_HEAVY}', 'borderRadius': '8px',
+                            'padding': '6px 14px', 'cursor': 'pointer',
+                        }),
+                        id='export-pdf-wrap',
+                        style={'display': 'none'},
+                    ),
                     html.Button("🌙", id='theme-toggle-btn', n_clicks=0, style={
                         'fontSize': '16px', 'background': 'none',
                         'border': f'0.5px solid {COLOR_BORDER_HEAVY}', 'borderRadius': '8px',
@@ -84,7 +88,7 @@ def build_layout(refresh_ms: int) -> html.Div:
                 'background': COLOR_SURFACE_WHITE, 'border': '0.5px solid #d4d4d4', 'borderRadius': '8px',
                 'padding': '10px 22px', 'cursor': 'pointer', 'marginLeft': '10px',
             }),
-            html.P("No TWS? Explore the dashboard with a sample portfolio.",
+            html.P("Explore the dashboard with a sample portfolio.",
                    style={'fontSize': '13px', 'color': COLOR_TEXT_MUTED, 'margin': '10px 0 0'}),
         ],
             id='retry-connection-wrap',
