@@ -3,7 +3,7 @@ version: "3.9"
 services:
   dashboard:
     build: .
-    image: ibkrdash:latest
+    image: gmarinos/ibkrdash:latest
     container_name: ibkrdash
 
     ports:
