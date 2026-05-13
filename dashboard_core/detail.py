@@ -1107,7 +1107,7 @@ def register(app):
 
     @app.callback(
         Output('uploaded-trades', 'data', allow_duplicate=True),
-        Output({'type': 'position-upload-status', 'index': ALL}, 'children'),
+        Output({'type': 'position-upload-status', 'index': ALL}, 'children', allow_duplicate=True),
         Input({'type': 'position-delete-trades', 'index': ALL}, 'n_clicks'),
         prevent_initial_call=True,
     )
