@@ -19,7 +19,7 @@ docker run --rm -e DEMO_MODE=1 -p 8050:8050 gmarinos/ibkrdash:latest
 
 Open **http://localhost:8050**. Loads a realistic sample portfolio with live yfinance prices — every feature works, no brokerage connection required.
 
-## Screenshots
+## Screenshot
 
 <img width="1880" height="913" alt="screenshot" src="https://github.com/user-attachments/assets/e841e5af-2c26-452b-8d65-df03160206b3" />
 
