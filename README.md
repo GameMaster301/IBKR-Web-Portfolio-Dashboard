@@ -21,8 +21,8 @@ Open **http://localhost:8050**. Loads a realistic sample portfolio with live yfi
 
 ## Screenshots
 
-<img width="1905" height="915" alt="screenshot" src="https://github.com/user-attachments/assets/3f49e696-01fe-41e5-a990-1e7b57e3e112" />
-<img width="1903" height="914" alt="screenshot2" src="https://github.com/user-attachments/assets/21f82bd5-6179-43e7-99dc-ec8265fe59a3" />
+<img width="1880" height="913" alt="screenshot" src="https://github.com/user-attachments/assets/e841e5af-2c26-452b-8d65-df03160206b3" />
+
 
 ## Install
 
