@@ -10,6 +10,17 @@ Docker notes
 
 from __future__ import annotations
 
+# Fail early and clearly on unsupported Python rather than crashing later with a
+# cryptic AttributeError. 3.10 is the floor ib_async 2.x requires.
+import sys
+
+if sys.version_info < (3, 10):  # noqa: UP036  intentional runtime floor check
+    raise SystemExit(
+        f"This app needs Python 3.10 or newer — you're on "
+        f"{sys.version_info.major}.{sys.version_info.minor}. "
+        "Install a newer Python (or run the Docker image, which bundles 3.12)."
+    )
+
 # asyncio loop must be created before any ib_async-touching import below.
 import asyncio
 

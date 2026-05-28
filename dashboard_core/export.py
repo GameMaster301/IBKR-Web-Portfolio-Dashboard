@@ -42,7 +42,14 @@ def register(app):
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import (
+            HRFlowable,
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+            Table,
+            TableStyle,
+        )
 
         df       = pd.DataFrame(data['positions'])
         s        = data.get('summary', {})
@@ -62,6 +69,21 @@ def register(app):
 
         demo = is_demo_mode()
 
+        # Every section spans the same usable width (A4 210mm − 2×20mm margins)
+        # so tables line up edge-to-edge and the page reads symmetrically.
+        CONTENT_W   = 170 * mm
+        SECTION_GAP = 8 * mm
+
+        def section_header(text: str):
+            """Uppercase label + thin full-width rule — one consistent style."""
+            story.append(Paragraph(text.upper(), ParagraphStyle(
+                'section', parent=styles['Normal'], fontSize=10,
+                fontName='Helvetica-Bold', textColor=colors.HexColor('#555555'),
+                leading=12, spaceAfter=3)))
+            story.append(HRFlowable(width=CONTENT_W, thickness=0.6,
+                                    color=colors.HexColor(_PDF_BORDER),
+                                    spaceAfter=6, spaceBefore=0))
+
         # Title
         title_text = "Portfolio Snapshot — DEMO MODE" if demo else "Portfolio Snapshot"
         story.append(Paragraph(title_text, ParagraphStyle(
@@ -69,7 +91,8 @@ def register(app):
         story.append(Paragraph(
             f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             ParagraphStyle('sub', parent=styles['Normal'], fontSize=9,
-                           textColor=colors.HexColor('#888888'), spaceAfter=14)))
+                           textColor=colors.HexColor('#888888'),
+                           spaceAfter=12 if demo else SECTION_GAP)))
         if demo:
             story.append(Paragraph(
                 "Sample portfolio — not real trading data.",
@@ -78,9 +101,10 @@ def register(app):
                                backColor=colors.HexColor(COLOR_WARN_BG),
                                borderColor=colors.HexColor(COLOR_WARN_BORDER),
                                borderWidth=0.5, borderPadding=6,
-                               spaceAfter=12)))
+                               spaceAfter=SECTION_GAP)))
 
-        # Summary table
+        # ── Summary ───────────────────────────────────────────────────────────
+        section_header("Summary")
         total_val   = s.get('total_value', 0)
         unreal_pnl  = s.get('total_unrealized_pnl', 0)
         real_pnl    = s.get('total_realized_pnl', 0) or 0
@@ -102,7 +126,7 @@ def register(app):
             ['Cash',           f"{sym}{a.get('cash_base', 0):,.2f}",
                                f"${a.get('cash_usd', 0) or 0:,.2f}"],
         ]
-        t = Table(summary_data, colWidths=[80*mm, 40*mm, 40*mm])
+        t = Table(summary_data, colWidths=[90*mm, 40*mm, 40*mm])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(_PDF_SURFACE)),
             ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -114,7 +138,6 @@ def register(app):
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
         story.append(t)
-        story.append(Spacer(1, 4*mm))
 
         # Income summary — one-liner showing projected dividends, yield, and
         # how many holdings actually pay. Hidden when no holdings pay anything.
@@ -129,6 +152,7 @@ def register(app):
             yield_pct   = (annual_base / total_val) * 100
             payers      = sum(1 for d in div_data.values() if (d.get('next_12m') or 0) > 0)
             total_hold  = len(df)
+            story.append(Spacer(1, 3*mm))
             story.append(Paragraph(
                 f"Projected 12-month dividends: <b>{sym}{annual_base:,.0f}</b> &nbsp;·&nbsp; "
                 f"Portfolio yield: <b>{yield_pct:.2f}%</b> &nbsp;·&nbsp; "
@@ -137,11 +161,12 @@ def register(app):
                                textColor=colors.HexColor('#444444'),
                                backColor=colors.HexColor(_PDF_SURFACE_SOFT),
                                borderColor=colors.HexColor(_PDF_BORDER),
-                               borderWidth=0.5, borderPadding=6, spaceAfter=6),
+                               borderWidth=0.5, borderPadding=6),
             ))
-        story.append(Spacer(1, 4*mm))
+        story.append(Spacer(1, SECTION_GAP))
 
-        # Best / worst performer callout
+        # ── Performance ───────────────────────────────────────────────────────
+        section_header("Performance")
         best   = s.get('best_performer', '—')
         worst  = s.get('worst_performer', '—')
         best_row  = df[df['ticker'] == best].iloc[0]  if best  != '—' and best  in df['ticker'].values else None
@@ -152,7 +177,7 @@ def register(app):
             ['Best Performer', 'Worst Performer'],
             [best_str, worst_str],
         ]
-        pt = Table(perf_data, colWidths=[82*mm, 82*mm])
+        pt = Table(perf_data, colWidths=[85*mm, 85*mm])
         pt.setStyle(TableStyle([
             ('BACKGROUND',    (0, 0), (-1, 0), colors.HexColor(_PDF_SURFACE)),
             ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -166,11 +191,10 @@ def register(app):
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
         story.append(pt)
-        story.append(Spacer(1, 10*mm))
+        story.append(Spacer(1, SECTION_GAP))
 
-        # Holdings table — includes daily change
-        story.append(Paragraph("Holdings", ParagraphStyle(
-            'h2', parent=styles['Heading2'], fontSize=12, spaceAfter=6)))
+        # ── Holdings ──────────────────────────────────────────────────────────
+        section_header("Holdings")
         hold_data = [['Ticker', 'Qty', 'Avg Cost', 'Price', 'Day %', 'Mkt Value', 'P&L %', 'Weight']]
         for _, row in df.iterrows():
             day_pct = row.get('daily_change_pct')
@@ -185,7 +209,8 @@ def register(app):
                 f"{row['pnl_pct']:+.2f}%",
                 f"{row['allocation_pct']:.1f}%",
             ])
-        ht = Table(hold_data, colWidths=[20*mm, 12*mm, 22*mm, 22*mm, 16*mm, 26*mm, 16*mm, 16*mm])
+        # Widths sum to 170mm — same span as the Summary/Performance tables.
+        ht = Table(hold_data, colWidths=[22*mm, 14*mm, 24*mm, 24*mm, 18*mm, 30*mm, 18*mm, 20*mm])
         # colour positive/negative day % and P&L % cells per row
         ht_style = [
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(_PDF_SURFACE)),

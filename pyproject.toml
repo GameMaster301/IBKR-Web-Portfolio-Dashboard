@@ -1,6 +1,12 @@
+[project]
+requires-python = '>=3.10'
+
 [tool.ruff]
 line-length = 110
-target-version = 'py311'
+# Floor is Python 3.10 (lowest ib_async 2.x supports). Keeping the target here
+# stops ruff's UP rules from suggesting 3.11-only syntax (e.g. datetime.UTC)
+# that would pass lint but crash on 3.10.
+target-version = 'py310'
 
 [tool.ruff.lint]
 select = ['E', 'F', 'W', 'I', 'UP', 'B']

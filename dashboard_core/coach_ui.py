@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
@@ -71,7 +71,8 @@ def register(app):
         return {
             'id':      uuid.uuid4().hex[:12],
             'title':   _thread_title(h),
-            'created': datetime.now(datetime.UTC).isoformat(),
+            # timezone.utc (not datetime.UTC) so this runs on Python < 3.11 too.
+            'created': datetime.now(timezone.utc).isoformat(),
             'history': h,
         }
 
@@ -467,17 +468,16 @@ def register(app):
                 else:
                     history.append({'q': question, 'a': answer, 'followups': followups})
             except requests.HTTPError as e:
+                status = e.response.status_code if e.response is not None else None
                 body = ''
                 try:
                     body = e.response.text[:300]
                 except Exception:
                     pass
-                status = e.response.status_code if e.response else '?'
                 log.warning("coach: HTTPError %s: %s", status, body)
                 history.append({
                     'q': question,
-                    'a': f"Provider returned an error ({status}). "
-                         f"Check that the key is valid and has credit.\n{body}",
+                    'a': ai_provider.explain_http_error(status, body),
                     'error': True,
                 })
             except Exception as e:
@@ -486,10 +486,24 @@ def register(app):
                                 'a': f"Couldn't reach the provider: {type(e).__name__}: {e}",
                                 'error': True})
             return _commit_and_return(history)
-        except Exception:
+        except Exception as e:
             log.exception("coach.run_llm crashed")
-            # Return a safe state so the UI unsticks from "Thinking…"
-            return no_update, no_update, None, False, False, "Send ↑"
+            # Surface the failure as an error bubble instead of silently
+            # dropping the question, so the user always sees what went wrong
+            # even when the API key validated fine.
+            try:
+                history = _active_history(threads, active_id)
+                history.append({
+                    'q': question,
+                    'a': f"Something went wrong handling this question: "
+                         f"{type(e).__name__}: {e}",
+                    'error': True,
+                })
+                new_threads, new_active = _commit_history(threads, active_id, history)
+                return new_threads, new_active, None, False, False, "Send ↑"
+            except Exception:
+                # Last-resort: at least unstick the UI from "Thinking…"
+                return no_update, no_update, None, False, False, "Send ↑"
 
 
     # ── Derived: chat-history = active thread's history ──────────────────────────

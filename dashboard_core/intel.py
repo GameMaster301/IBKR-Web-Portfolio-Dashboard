@@ -63,7 +63,6 @@ def register(app):
     @app.callback(
         Output('toast', 'children'),
         Input('portfolio-data', 'data'),
-        Input('export-pdf-btn', 'n_clicks'),
         prevent_initial_call=True,
     )
     def update_toast(*_):
@@ -71,7 +70,6 @@ def register(app):
         ts = datetime.now().strftime('%H:%M:%S')
         messages = {
             'portfolio-data': f"Portfolio refreshed · {ts}",
-            'export-pdf-btn': f"PDF downloaded · {ts}",
         }
         msg = messages.get(triggered)
         if not msg:

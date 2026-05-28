@@ -122,6 +122,54 @@ def validate_key(api_key: str) -> tuple[bool, str]:
         return False, f"Could not reach provider: {e}"
 
 
+# ── Error explanation ─────────────────────────────────────────────────────────
+
+def explain_http_error(status: int | None, body: str = '') -> str:
+    """Turn a provider HTTP error into a clear, user-facing message.
+
+    The key may have validated fine against /v1/models yet still fail a real
+    chat call — most often because it's out of credits, expired, or rate-
+    limited. We surface that distinction explicitly so the user knows it's an
+    account/billing issue, not a bug in the dashboard.
+    """
+    # Pull the provider's own message out of the JSON body if present.
+    detail = ''
+    try:
+        parsed = json.loads(body) if body else {}
+        err = parsed.get('error', parsed) if isinstance(parsed, dict) else {}
+        if isinstance(err, dict):
+            detail = (err.get('message') or '').strip()
+    except Exception:
+        pass
+
+    blob = f"{detail} {body}".lower()
+    out_of_credit = any(s in blob for s in (
+        'credit balance', 'insufficient', 'quota', 'billing', 'payment',
+        'exceeded your current', 'spending limit',
+    ))
+
+    if out_of_credit:
+        msg = ("Your account is out of credits / over quota. The key is valid, "
+               "but the provider won't process requests until you add billing or "
+               "credit to your account.")
+    elif status in (401, 403) or 'expired' in blob or 'revoked' in blob:
+        msg = ("Your API key was rejected (it may be expired, revoked, or lack "
+               "permission). Open the AI tab, clear the key, and paste a fresh one.")
+    elif status == 429:
+        msg = ("Rate limit / quota exceeded. The key is valid — wait a moment "
+               "and try again, or check your account's usage limits.")
+    elif status and 500 <= status < 600:
+        msg = "The provider is having a temporary outage (server error). Try again shortly."
+    else:
+        msg = (f"The provider returned an error (HTTP {status}). This is an "
+               "account/key issue, not a dashboard bug — check the key is valid "
+               "and has credit.")
+
+    if detail:
+        msg += f"\n\nProvider said: {detail}"
+    return msg
+
+
 # ── Per-provider call ─────────────────────────────────────────────────────────
 
 _TIMEOUT = 45  # seconds; the dashboard is synchronous, keep it modest
