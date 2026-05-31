@@ -316,7 +316,7 @@ def _build_brief_section(f: dict, scored: dict, pos: dict) -> html.Div:
         }),
         html.Div([
             html.Div([
-                _cm("P/E",         pe_s,  pe_i,  pe_c),
+                _cm("Fwd P/E",      pe_s,  pe_i,  pe_c),
                 _cm("PEG",         f"{peg:.2f}" if peg else None, "growth-adjusted", '#9ca3af'),
                 _cm("Rev Growth",  f"{rev:+.1f}%/yr" if rev is not None else None,
                     ("very fast" if rev and rev > 20 else
